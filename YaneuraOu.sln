@@ -13,6 +13,8 @@ Global
 		Debug-mate|x86 = Debug-mate|x86
 		Debug-user|x64 = Debug-user|x64
 		Debug-user|x86 = Debug-user|x86
+		Relase-user-sse42-py|x64 = Relase-user-sse42-py|x64
+		Relase-user-sse42-py|x86 = Relase-user-sse42-py|x86
 		Release-2018-Otafuku|x64 = Release-2018-Otafuku|x64
 		Release-2018-Otafuku|x86 = Release-2018-Otafuku|x86
 		Release-2018-OtafukuLearn|x64 = Release-2018-OtafukuLearn|x64
@@ -37,6 +39,8 @@ Global
 		Release-mate-sse42|x86 = Release-mate-sse42|x86
 		Release-user|x64 = Release-user|x64
 		Release-user|x86 = Release-user|x86
+		Release-user-py|x64 = Release-user-py|x64
+		Release-user-py|x86 = Release-user-py|x86
 		Release-user-sse2|x64 = Release-user-sse2|x64
 		Release-user-sse2|x86 = Release-user-sse2|x86
 		Release-user-sse41|x64 = Release-user-sse41|x64
@@ -57,6 +61,10 @@ Global
 		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Debug-user|x64.Build.0 = Debug-user|x64
 		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Debug-user|x86.ActiveCfg = Debug-user|Win32
 		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Debug-user|x86.Build.0 = Debug-user|Win32
+		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Relase-user-sse42-py|x64.ActiveCfg = Relase-user-sse42-py|x64
+		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Relase-user-sse42-py|x64.Build.0 = Relase-user-sse42-py|x64
+		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Relase-user-sse42-py|x86.ActiveCfg = Relase-user-sse42-py|Win32
+		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Relase-user-sse42-py|x86.Build.0 = Relase-user-sse42-py|Win32
 		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Release-2018-Otafuku|x64.ActiveCfg = Release-2018-Otafuku|x64
 		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Release-2018-Otafuku|x64.Build.0 = Release-2018-Otafuku|x64
 		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Release-2018-Otafuku|x86.ActiveCfg = Release-2018-Otafuku|Win32
@@ -98,6 +106,10 @@ Global
 		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Release-user|x64.Build.0 = Release-user|x64
 		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Release-user|x86.ActiveCfg = Release-user|Win32
 		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Release-user|x86.Build.0 = Release-user|Win32
+		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Release-user-py|x64.ActiveCfg = Release-user-py|x64
+		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Release-user-py|x64.Build.0 = Release-user-py|x64
+		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Release-user-py|x86.ActiveCfg = Release-user-py|Win32
+		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Release-user-py|x86.Build.0 = Release-user-py|Win32
 		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Release-user-sse2|x64.ActiveCfg = Release-user-sse2|x64
 		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Release-user-sse2|x64.Build.0 = Release-user-sse2|x64
 		{28C8605A-4E8E-4F59-99B5-96F545BC7D5E}.Release-user-sse2|x86.ActiveCfg = Release-user-sse2|x64

@@ -465,6 +465,9 @@
     <ClCompile Include="eval\nnue\features\p.cpp">
       <Filter>リソース ファイル\eval\nnue\features</Filter>
     </ClCompile>
+    <ClCompile Include="extra\pymodule.cpp">
+      <Filter>リソース ファイル\extra</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="..\docs\USI拡張コマンド.txt">
