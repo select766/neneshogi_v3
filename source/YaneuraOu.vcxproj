@@ -713,6 +713,7 @@
     <ClInclude Include="engine\2018-otafuku-engine\2018-otafuku-param.h" />
     <ClInclude Include="engine\help-mate-engine\help-mate-search.h" />
     <ClInclude Include="engine\mate-engine\mate-search.h" />
+    <ClInclude Include="engine\user-engine\dnn_converter.h" />
     <ClInclude Include="evaluate.h" />
     <ClInclude Include="eval\evaluate_io.h" />
     <ClInclude Include="eval\evaluate_common.h" />
@@ -766,6 +767,7 @@
     <ClInclude Include="extra\long_effect.h" />
     <ClInclude Include="extra\macros.h" />
     <ClInclude Include="extra\mate\mate1ply.h" />
+    <ClInclude Include="extra\pymodule.h" />
     <ClInclude Include="extra\thread_win32.h" />
     <ClInclude Include="learn\half_float.h" />
     <ClInclude Include="learn\learn.h" />
@@ -785,6 +787,7 @@
     <ClCompile Include="engine\help-mate-engine\help-mate-search.cpp" />
     <ClCompile Include="engine\local-game-server\local-game-server.cpp" />
     <ClCompile Include="engine\mate-engine\mate-search.cpp" />
+    <ClCompile Include="engine\user-engine\dnn_converter.cpp" />
     <ClCompile Include="engine\user-engine\user-search.cpp" />
     <ClCompile Include="eval\evaluate_bona_piece.cpp" />
     <ClCompile Include="eval\evaluate_io.cpp" />

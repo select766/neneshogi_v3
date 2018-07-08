@@ -412,6 +412,7 @@
 #define ENGINE_NAME "YaneuraOu user engine"
 #define EVAL_MATERIAL
 #define USE_SEE
+#define USE_SFEN_PACKER
 #endif
 
 // --------------------

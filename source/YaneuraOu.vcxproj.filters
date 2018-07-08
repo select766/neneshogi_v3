@@ -295,6 +295,12 @@
     <ClInclude Include="eval\nnue\trainer\features\factorizer_half_kp.h">
       <Filter>リソース ファイル\eval\nnue\trainer\features</Filter>
     </ClInclude>
+    <ClInclude Include="engine\user-engine\dnn_converter.h">
+      <Filter>リソース ファイル\engine\user-engine</Filter>
+    </ClInclude>
+    <ClInclude Include="extra\pymodule.h">
+      <Filter>リソース ファイル\extra</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="movegen.cpp">
@@ -467,6 +473,9 @@
     </ClCompile>
     <ClCompile Include="extra\pymodule.cpp">
       <Filter>リソース ファイル\extra</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\user-engine\dnn_converter.cpp">
+      <Filter>リソース ファイル\engine\user-engine</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

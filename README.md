@@ -1,3 +1,43 @@
+# ねね将棋 (v3; 2018/10 将棋電王トーナメント向け)
+
+# セットアップ
+## 環境
+- Visual Studio 2017 (C++)
+- Python 3.6 (Anaconda)
+- PyCharm
+
+## ビルド
+```
+git submodule init
+git submodule update
+```
+
+`YaneuraOu.sln`を開きソリューション構成`Release-user`および`Release-user-py`をビルド。
+
+`neneshogi`ディレクトリで`python addpath.py`を実行。ビルドされたpythonモジュール`neneshogi_cpp`をimportパスに入れる。
+
+`neneshogi`ディレクトリで`python setup.py develop`を実行。pythonのモジュール`neneshogi`をimportパスに入れる。
+
+## 方策学習
+超暫定。やねうら王形式(`PackedSfenValue`)の学習棋譜が必要。
+[例](http://yaneuraou.yaneu.com/2018/01/23/%E6%9C%88%E5%88%8A%E6%95%99%E5%B8%AB%E5%B1%80%E9%9D%A2-2018%E5%B9%B41%E6%9C%88%E5%8F%B7/)
+
+棋譜データを`shuffle_sfen1.bin`とする。
+
+```
+# 棋譜をCTFDeserializerで読める形式にする(5GBぐらい)
+python -m neneshogi.convert_kifu_ctf shuffled_sfen1.bin train_data.txt --count 100000
+python -m neneshogi.convert_kifu_ctf shuffled_sfen1.bin test_data.txt --count 10000 --skip 100000
+# 学習
+python -m neneshogi.train_proto
+```
+
+モデルファイルが`policy.cmf`に出力される。
+
+====
+
+以下、やねうら王のREADME
+
 # About this project
 
 YaneuraOu mini is a shogi engine(AI player), stronger than Bonanza6 , educational and tiny code(about 2500 lines) , USI compliant engine , capable of being compiled by VC++2017
