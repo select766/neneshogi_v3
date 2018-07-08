@@ -1,4 +1,7 @@
 ﻿#include "../../extra/all.h"
+#include "CNTKLibrary.h"
+
+using namespace CNTK;
 
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
 void user_test(Position& pos_, istringstream& is)
@@ -16,6 +19,7 @@ void USI::extra_option(USI::OptionsMap & o)
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
 void Search::init()
 {
+	DeviceDescriptor device = DeviceDescriptor::CPUDevice();
 }
 
 // isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
