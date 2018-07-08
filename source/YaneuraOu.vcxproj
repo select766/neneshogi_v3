@@ -554,12 +554,12 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Relase-user-sse42-py|x64'">
-    <OutDir>$(OutBaseDir)pymodule\$(YaneuraOuCpuTarget)\</OutDir>
+    <OutDir>$(OutBaseDir)pymodule\$(YaneuraOuCpuTarget)\neneshogi_cpp\</OutDir>
     <TargetName>neneshogi_cpp</TargetName>
     <TargetExt>.pyd</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release-user-py|x64'">
-    <OutDir>$(OutBaseDir)pymodule\$(YaneuraOuCpuTarget)\</OutDir>
+    <OutDir>$(OutBaseDir)pymodule\$(YaneuraOuCpuTarget)\neneshogi_cpp\</OutDir>
     <TargetName>neneshogi_cpp</TargetName>
     <TargetExt>.pyd</TargetExt>
   </PropertyGroup>
