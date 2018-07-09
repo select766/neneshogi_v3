@@ -301,6 +301,9 @@
     <ClInclude Include="extra\pymodule.h">
       <Filter>リソース ファイル\extra</Filter>
     </ClInclude>
+    <ClInclude Include="engine\user-engine\dnn_converter_py.h">
+      <Filter>リソース ファイル\engine\user-engine</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="movegen.cpp">
@@ -475,6 +478,9 @@
       <Filter>リソース ファイル\extra</Filter>
     </ClCompile>
     <ClCompile Include="engine\user-engine\dnn_converter.cpp">
+      <Filter>リソース ファイル\engine\user-engine</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\user-engine\dnn_converter_py.cpp">
       <Filter>リソース ファイル\engine\user-engine</Filter>
     </ClCompile>
   </ItemGroup>

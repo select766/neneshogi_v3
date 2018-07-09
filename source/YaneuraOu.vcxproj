@@ -714,6 +714,7 @@
     <ClInclude Include="engine\help-mate-engine\help-mate-search.h" />
     <ClInclude Include="engine\mate-engine\mate-search.h" />
     <ClInclude Include="engine\user-engine\dnn_converter.h" />
+    <ClInclude Include="engine\user-engine\dnn_converter_py.h" />
     <ClInclude Include="evaluate.h" />
     <ClInclude Include="eval\evaluate_io.h" />
     <ClInclude Include="eval\evaluate_common.h" />
@@ -788,6 +789,7 @@
     <ClCompile Include="engine\local-game-server\local-game-server.cpp" />
     <ClCompile Include="engine\mate-engine\mate-search.cpp" />
     <ClCompile Include="engine\user-engine\dnn_converter.cpp" />
+    <ClCompile Include="engine\user-engine\dnn_converter_py.cpp" />
     <ClCompile Include="engine\user-engine\user-search.cpp" />
     <ClCompile Include="eval\evaluate_bona_piece.cpp" />
     <ClCompile Include="eval\evaluate_io.cpp" />

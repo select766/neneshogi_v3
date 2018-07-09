@@ -1,45 +1,19 @@
 ﻿#include "dnn_converter.h"
 
-#ifdef PYMODULE
-static bool pymodule_initialized = false;
-#endif
-
 DNNConverter::DNNConverter(int _format_board, int _format_move) : format_board(format_board), format_move(format_move)
 {
-#ifdef PYMODULE
-	if (!pymodule_initialized) {
-		// main関数と同等の初期化をする
-		Bitboards::init();
-		Position::init();
-		Search::init();
-		Threads.set(1);
-		Eval::init();
-		pymodule_initialized = true;
-	}
-#endif
 }
 
-py::tuple DNNConverter::board_shape() const
+vector<int> DNNConverter::board_shape() const
 {
-	return py::make_tuple(85, 9, 9);
+	return vector<int>{85, 9, 9};
 }
 
-py::tuple DNNConverter::move_shape() const
+vector<int> DNNConverter::move_shape() const
 {
-	return py::make_tuple(139, 9, 9);
+	return vector<int>{139, 9, 9};
 }
 
-bool DNNConverter::set_packed_sfen(const char* packed_sfen)
-{
-	const PackedSfen* sfen = reinterpret_cast<const PackedSfen*>(packed_sfen);
-	return pos.set_from_packed_sfen(*sfen, &init_state, Threads.main()) == 0;
-	// gamePly = 0となるので注意
-}
-
-void DNNConverter::set_sfen(std::string sfen)
-{
-	pos.set(sfen, &init_state, Threads.main());
-}
 
 static void fill_channel(float* buf, int ch, float value)
 {
@@ -56,7 +30,7 @@ static void fill_channel_range(float* buf, int ch_begin, int ch_end, float value
 	}
 }
 
-py::array_t<float> DNNConverter::get_board_array() const
+void DNNConverter::get_board_array(const Position & pos, float *buf) const
 {	/*
 	* Ponanza (SDT5)の資料を参考に作成
 	* 盤上の駒14チャンネル *二人
@@ -66,7 +40,6 @@ py::array_t<float> DNNConverter::get_board_array() const
 	* 後手番の際は、盤面・駒の所属を反転して先手番の状態にする。
 	* 手数は現在入れていない。Position.set_from_packed_sfenに要素がないため。
 	*/
-	float buf[85 * 9 * 9] = {};
 	if (pos.side_to_move() == BLACK) {
 		for (Square i = SQ_ZERO; i < SQ_NB; i++) {
 			Piece p = pos.piece_on(i);
@@ -124,29 +97,10 @@ py::array_t<float> DNNConverter::get_board_array() const
 	}
 
 	fill_channel(buf, 84, (float)pos.in_check());
-	return py::array_t<float>(
-		py::buffer_info(
-			buf,
-			sizeof(float),
-			py::format_descriptor<float>::format(),
-			3,
-			{ 85, 9, 9 },
-			{ sizeof(float) * 9 * 9,  sizeof(float) * 9,  sizeof(float) }
-		)
-		);
 }
 
-int DNNConverter::get_move_index(Move move) const
-{
-	return get_move_index_inner(pos, move);
-}
 
-Move DNNConverter::reverse_move_index(int move_index) const
-{
-	return reverse_move_index_inner(pos, move_index);
-}
-
-int DNNConverter::get_move_index_inner(const Position & pos, Move move) const
+int DNNConverter::get_move_index(const Position & pos, Move move) const
 {	/*
 	AlphaZeroの論文を参考に作成
 	9x9は移動元。
@@ -237,7 +191,7 @@ int DNNConverter::get_move_index_inner(const Position & pos, Move move) const
 	}
 }
 
-Move DNNConverter::reverse_move_index_inner(const Position & pos, int move_index) const
+Move DNNConverter::reverse_move_index(const Position & pos, int move_index) const
 {
 	int ch = move_index / (int)SQ_NB;
 	Square _move_from = (Square)(move_index % (int)SQ_NB);
