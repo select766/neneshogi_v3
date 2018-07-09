@@ -8,10 +8,11 @@ import time
 import cntk as C
 import cntk.tests.test_utils
 
-cntk.tests.test_utils.set_device_from_pytest_env()  # (only needed for our build system)
 C.cntk_py.set_fixed_random_seed(1)  # fix a random seed for CNTK components
+# device = C.use_default_device()
 
 from neneshogi_cpp import DNNConverter
+from .packed_sfen_data_source import PackedSfenDataSource
 
 cvt = DNNConverter(0, 0)
 input_dim_model = cvt.board_shape()
@@ -80,7 +81,7 @@ def print_training_progress(trainer, mb, frequency, verbose=1):
     return mb, training_loss, eval_error
 
 
-def train_test(train_reader, test_reader, model_func, num_sweeps_to_train_with=1):
+def train_test(train_reader, test_reader, model_func, num_sweeps_to_train_with=3):
     # Instantiate the model function; x is the input (feature) variable
     # We will scale the input image pixels within 0-1 range by dividing all input value by 255.
     # model = model_func(x / 255)
@@ -97,14 +98,10 @@ def train_test(train_reader, test_reader, model_func, num_sweeps_to_train_with=1
 
     # Initialize the parameters for the trainer
     minibatch_size = 64
-    num_samples_per_sweep = 100000
+    num_samples_per_sweep = 10000
     num_minibatches_to_train = (num_samples_per_sweep * num_sweeps_to_train_with) / minibatch_size
 
     # Map the data streams to the input and labels.
-    input_map = {
-        y: train_reader.streams.labels,
-        x: train_reader.streams.features
-    }
 
     # Uncomment below for more detailed logging
     training_progress_output_freq = 100
@@ -114,19 +111,14 @@ def train_test(train_reader, test_reader, model_func, num_sweeps_to_train_with=1
 
     for i in range(0, int(num_minibatches_to_train)):
         # Read a mini batch from the training data file
-        data = train_reader.next_minibatch(minibatch_size, input_map=input_map)
-        trainer.train_minibatch(data)
+        data = train_reader.next_minibatch(minibatch_size, 1, 0)
+        trainer.train_minibatch({x: data[train_reader.board_info], y: data[train_reader.move_info]})
         print_training_progress(trainer, i, training_progress_output_freq, verbose=1)
 
     # Print training time
     print("Training took {:.1f} sec".format(time.time() - start))
 
     # Test the model
-    test_input_map = {
-        y: test_reader.streams.labels,
-        x: test_reader.streams.features
-    }
-
     # Test data for trained model
     test_minibatch_size = 128
     num_samples = 10000
@@ -139,8 +131,8 @@ def train_test(train_reader, test_reader, model_func, num_sweeps_to_train_with=1
         # Each data point in the minibatch is a MNIST digit image of 784 dimensions
         # with one pixel per dimension that we will encode / decode with the
         # trained model.
-        data = test_reader.next_minibatch(test_minibatch_size, input_map=test_input_map)
-        eval_error = trainer.test_minibatch(data)
+        data = test_reader.next_minibatch(test_minibatch_size, 1, 0)
+        eval_error = trainer.test_minibatch({x: data[test_reader.board_info], y: data[test_reader.move_info]})
         test_result = test_result + eval_error
 
     # Average of evaluation errors of all test minibatches
@@ -150,11 +142,11 @@ def train_test(train_reader, test_reader, model_func, num_sweeps_to_train_with=1
 def do_train_test():
     global z
     z = create_model(x)
-    train_file = "train_data.txt"
-    test_file = "test_data.txt"
-    reader_train = create_reader(train_file, True, int(np.prod(input_dim_model)), int(np.prod(output_dim_model)))
-    reader_test = create_reader(test_file, False, int(np.prod(input_dim_model)), int(np.prod(output_dim_model)))
+    packed_sfen_data = r"D:\dev\shogi\db\shuffled_sfen1_1m.bin"
+    reader_train = PackedSfenDataSource(packed_sfen_data, 10000, skip=0, format_board=0, format_move=0)
+    reader_test = PackedSfenDataSource(packed_sfen_data, 10000, skip=100000, format_board=0, format_move=0)
     train_test(reader_train, reader_test, z)
-    z.save("policy.cmf")
+    z.save("policy2.cmf")
+
 
 do_train_test()
