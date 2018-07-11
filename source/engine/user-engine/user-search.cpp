@@ -27,7 +27,7 @@ void Search::init()
 // isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
 void  Search::clear()
 {
-	modelFunc = CNTK::Function::Load(L"../../policy.cmf", device, CNTK::ModelFormat::CNTKv2);
+	modelFunc = CNTK::Function::Load(L"D:\\dev\\shogi\\neneshogi\\neneshogi_v3\\models\\VGG16.model", device, CNTK::ModelFormat::CNTKv2);
 	cvt = shared_ptr<DNNConverter>(new DNNConverter(0, 0));
 }
 
@@ -46,7 +46,9 @@ void MainThread::think()
 
 	// The model has only one output.
 	// If the model has more than one output, use modelFunc->Outputs to get the list of output variables.
-	CNTK::Variable outputVar = modelFunc->Output();
+	auto outputVars = modelFunc->Outputs();
+	CNTK::Variable policyVar = outputVars[0];
+	CNTK::Variable valueVar = outputVars[1];
 
 
 	// Create input value and input data map
@@ -55,24 +57,28 @@ void MainThread::think()
 
 	// Create output data map. Using null as Value to indicate using system allocated memory.
 	// Alternatively, create a Value object and add it to the data map.
-	std::unordered_map<CNTK::Variable, CNTK::ValuePtr> outputDataMap = { { outputVar, nullptr } };
+	std::unordered_map<CNTK::Variable, CNTK::ValuePtr> outputDataMap = { { policyVar, nullptr }, { valueVar, nullptr } };
 
 	// Start evaluation on the device
 	modelFunc->Evaluate(inputDataMap, outputDataMap, device);
 
 	// Get evaluate result as dense output
-	CNTK::ValuePtr outputVal = outputDataMap[outputVar];
-	std::vector<std::vector<float>> outputData;
-	outputVal->CopyVariableValueTo(outputVar, outputData);
+	CNTK::ValuePtr policyVal = outputDataMap[policyVar];
+	std::vector<std::vector<float>> policyData;
+	policyVal->CopyVariableValueTo(policyVar, policyData);
+	CNTK::ValuePtr valueVal = outputDataMap[valueVar];
+	std::vector<std::vector<float>> valueData;
+	valueVal->CopyVariableValueTo(valueVar, valueData);
+	float static_value = valueData[0][0];
 
-	std::vector<float> &scores = outputData[0];
+	std::vector<float> &policy_scores = policyData[0];
 
 	Move bestMove = MOVE_RESIGN;
 	float bestScore = -INFINITY;
 	for (auto m : MoveList<LEGAL>(rootPos))
 	{
 		int dnn_index = cvt->get_move_index(rootPos, m.move);
-		float score = scores[dnn_index];
+		float score = policy_scores[dnn_index];
 		if (bestScore < score)
 		{
 			bestScore = score;
@@ -80,7 +86,7 @@ void MainThread::think()
 		}
 	}
 
-	sync_cout << "info string bestscore " << bestScore << sync_endl;
+	sync_cout << "info string bestscore " << bestScore << " static_value " << static_value << sync_endl;
 	sync_cout << "bestmove " << bestMove << sync_endl;
 }
 

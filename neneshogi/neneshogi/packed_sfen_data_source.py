@@ -34,6 +34,7 @@ class PackedSfenDataSource(UserMinibatchSource):
         self.board_info = StreamInformation("board", 0, "dense", np.float32, self.board_shape)
         self.move_dim = int(np.prod(self._cvt.move_shape()))
         self.move_info = StreamInformation("move", 1, "dense", np.float32, (self.move_dim,))
+        self.result_info = StreamInformation("result", 2, "dense", np.float32, (1,))
 
         super().__init__()  # it references self.stream_infos
 
@@ -47,21 +48,25 @@ class PackedSfenDataSource(UserMinibatchSource):
         board = self._cvt.get_board_array()
         move_ary = np.zeros((self.move_dim,), dtype=np.float32)
         move_ary[self._cvt.get_move_index(move)] = 1
-        return board, move_ary
+        result_ary = np.zeros((1,), dtype=np.float32)
+        result_ary[0] = game_result  # -1 or 1
+        return board, move_ary, result_ary
 
     def stream_infos(self):
-        return [self.board_info, self.move_info]
+        return [self.board_info, self.move_info, self.result_info]
 
     def next_minibatch(self, num_samples: int, number_of_workers: int, worker_rank: int, device=None):
         assert number_of_workers == 1 and worker_rank == 0, "multi worker not supported"
         boards = []
         moves = []
+        results = []
         sweep_end = False
         while len(boards) < num_samples and self.total_generated_samples < self.max_samples and (
                 not self.no_next_sweep):
-            board, move = self._read_record()
+            board, move, result = self._read_record()
             boards.append(board)
             moves.append(move)
+            results.append(result)
 
             self.record_idx += 1
             self.total_generated_samples += 1
@@ -80,9 +85,11 @@ class PackedSfenDataSource(UserMinibatchSource):
 
         board_data = C.Value(batch=np.array(boards), device=device)
         move_data = C.Value(batch=np.array(moves), device=device)
+        result_data = C.Value(batch=np.array(results), device=device)
         res = {
             self.board_info: MinibatchData(board_data, n_items, n_items, sweep_end),
             self.move_info: MinibatchData(move_data, n_items, n_items, sweep_end),
+            self.result_info: MinibatchData(result_data, n_items, n_items, sweep_end),
         }
         return res
 

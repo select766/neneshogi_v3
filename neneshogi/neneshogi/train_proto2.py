@@ -85,6 +85,7 @@ def create_vgg16():
     # Input variables denoting the features and label data
     feature_var = C.input_variable((num_channels, image_height, image_width))
     label_var = C.input_variable((num_classes))
+    value_var = C.input_variable(1)
 
     with C.layers.default_options(init=C.glorot_uniform(), activation=C.relu):
         h = feature_var
@@ -96,28 +97,35 @@ def create_vgg16():
                                    num_filters=64,
                                    strides=(1, 1),
                                    pad=True, name='second_conv')(h)
-        h = C.layers.Convolution2D(filter_shape=(5, 5),
-                                   num_filters=num_output_channels,
-                                   strides=(1, 1),
-                                   pad=True, name='classify',
-                                   activation=None)(h)
-        z = C.reshape(h, shape=(num_output_channels * 9 * 9,))
+        policy = C.layers.Convolution2D(filter_shape=(5, 5),
+                                        num_filters=num_output_channels,
+                                        strides=(1, 1),
+                                        pad=True, name='classify',
+                                        activation=None)(h)
+        policy = C.reshape(policy, shape=(num_output_channels * 9 * 9,))
+        value = C.layers.Dense(1, activation=C.tanh)(h)
 
     # loss and metric
-    ce = C.cross_entropy_with_softmax(z, label_var)
-    pe = C.classification_error(z, label_var)
-    pe5 = C.classification_error(z, label_var, topN=5)
+    ce = C.cross_entropy_with_softmax(policy, label_var)
+    pe = C.classification_error(policy, label_var)
+    pe5 = C.classification_error(policy, label_var, topN=5)
+    sqe = C.squared_error(value, value_var)
+    total_error = ce * 0.01 + sqe
 
-    log_number_of_parameters(z)
+    log_number_of_parameters(policy)
+    log_number_of_parameters(value)
     print()
 
     return {
         'feature': feature_var,
         'label': label_var,
+        'value': value_var,
         'ce': ce,
         'pe': pe,
         'pe5': pe5,
-        'output': z
+        'sqe': sqe,
+        'total_error': total_error,
+        'output': C.combine([policy, value])
     }
 
 
@@ -134,7 +142,12 @@ def create_trainer(network, epoch_size, num_quantization_bits, progress_printer)
                                             l2_regularization_weight=l2_reg_weight)
 
     # Create trainer
-    return C.Trainer(network['output'], (network['ce'], network['pe']), [local_learner], progress_printer)
+    # 複数のmetricでの評価はまだサポートされてないようだ。
+    # https://github.com/Microsoft/CNTK/issues/2522
+    # しかしロス計算に使われない計算結果があると下記のwarningが出るので0をかけてごまかす。
+    # WARNING: Function::Forward provided values for (1) extra arguments which are not required for evaluating the specified Function outputs!
+    return C.Trainer(network['output'], (network['total_error'], network['sqe'] + network["pe"] * 0), [local_learner],
+                     progress_printer)
     # # Since we reuse parameter settings (learning rate, momentum) from Caffe, we set unit_gain to False to ensure consistency
     # parameter_learner = data_parallel_distributed_learner(
     #     local_learner,
@@ -150,12 +163,14 @@ def train_and_test(network, trainer, train_source, test_source, minibatch_size, 
     # define mapping from intput streams to network inputs
     input_map = {
         network['feature']: train_source.board_info,
-        network['label']: train_source.move_info
+        network['label']: train_source.move_info,
+        network['value']: train_source.result_info
     }
 
     test_input_map = {
         network['feature']: test_source.board_info,
-        network['label']: test_source.move_info
+        network['label']: test_source.move_info,
+        network['value']: test_source.result_info
     }
 
     # Train all minibatches
@@ -165,7 +180,8 @@ def train_and_test(network, trainer, train_source, test_source, minibatch_size, 
         mb_size=minibatch_size,
         progress_frequency=epoch_size,
         checkpoint_config=CheckpointConfig(filename=os.path.join(model_path, model_name), restore=restore),
-        test_config=TestConfig(minibatch_source=test_source, minibatch_size=minibatch_size, model_inputs_to_streams=test_input_map)
+        test_config=TestConfig(minibatch_source=test_source, minibatch_size=minibatch_size,
+                               model_inputs_to_streams=test_input_map)
     ).train()
 
 
