@@ -1,6 +1,8 @@
 ﻿#include "../../extra/all.h"
 #include "CNTKLibrary.h"
 #include "dnn_converter.h"
+#include <numeric>
+#include <functional>
 
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
 void user_test(Position& pos_, istringstream& is)
@@ -27,8 +29,16 @@ void Search::init()
 // isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
 void  Search::clear()
 {
-	modelFunc = CNTK::Function::Load(L"D:\\dev\\shogi\\neneshogi\\neneshogi_v3\\models\\VGG16.model", device, CNTK::ModelFormat::CNTKv2);
-	cvt = shared_ptr<DNNConverter>(new DNNConverter(0, 0));
+	// モデルのロード
+	// 本来はファイル名からフォーマットを推論したい
+	int format_board = 0, format_move = 0;
+	wchar_t model_path[1024];
+	string evaldir = Options["EvalDir"];
+	wchar_t evaldir_w[1024];
+	mbstowcs(evaldir_w, evaldir.c_str(), sizeof(model_path) / sizeof(model_path[0]) - 1); // C4996
+	swprintf(model_path, sizeof(model_path) / sizeof(model_path[0]), L"%s/nene_%d_%d.model", evaldir_w, format_board, format_board);
+	modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
+	cvt = shared_ptr<DNNConverter>(new DNNConverter(format_board, format_move));
 }
 
 // 探索開始時に呼び出される。
@@ -38,7 +48,8 @@ void MainThread::think()
 {
 	sync_cout << "info string start evaluation" << sync_endl;
 
-	vector<float> inputData(85 * 9 * 9);
+	auto input_shape = cvt->board_shape();
+	vector<float> inputData(accumulate(input_shape.begin(), input_shape.end(), 1, std::multiplies<int>()));
 	cvt->get_board_array(rootPos, &inputData[0]);
 
 	// Get input variable. The model has only one single input.
