@@ -19,6 +19,7 @@ shared_ptr<DNNConverter> cvt;
 // USI::init()のなかからコールバックされる。
 void USI::extra_option(USI::OptionsMap & o)
 {
+	o["GPU"] << Option(-1, -1, 16);//使用するGPU番号(-1==CPU)
 }
 
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
@@ -29,6 +30,13 @@ void Search::init()
 // isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
 void  Search::clear()
 {
+	// 評価デバイス選択
+	int gpu_id = (int)Options["GPU"];
+	if (gpu_id >= 0)
+	{
+		device = CNTK::DeviceDescriptor::GPUDevice((unsigned int)gpu_id);
+	}
+
 	// モデルのロード
 	// 本来はファイル名からフォーマットを推論したい
 	int format_board = 0, format_move = 0;
