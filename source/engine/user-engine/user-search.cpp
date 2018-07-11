@@ -39,6 +39,8 @@ void  Search::clear()
 
 	// モデルのロード
 	// 本来はファイル名からフォーマットを推論したい
+	// 将棋所からは日本語WindowsだとオプションがCP932で来る。mbstowcsにそれを認識させ、日本語ファイル名を正しく変換
+	setlocale(LC_ALL, "");
 	int format_board = 0, format_move = 0;
 	wchar_t model_path[1024];
 	string evaldir = Options["EvalDir"];
