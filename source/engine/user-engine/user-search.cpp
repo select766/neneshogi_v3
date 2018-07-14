@@ -46,7 +46,7 @@ void  Search::clear()
 	string evaldir = Options["EvalDir"];
 	wchar_t evaldir_w[1024];
 	mbstowcs(evaldir_w, evaldir.c_str(), sizeof(model_path) / sizeof(model_path[0]) - 1); // C4996
-	swprintf(model_path, sizeof(model_path) / sizeof(model_path[0]), L"%s/nene_%d_%d.model", evaldir_w, format_board, format_board);
+	swprintf(model_path, sizeof(model_path) / sizeof(model_path[0]), L"%s/nene_%d_%d.cmf", evaldir_w, format_board, format_board);
 	modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
 	cvt = shared_ptr<DNNConverter>(new DNNConverter(format_board, format_move));
 }
