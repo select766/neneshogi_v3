@@ -1,3 +1,4 @@
+#ifdef PYMODULE
 #include "../../extra/all.h"
 #include "dnn_converter.h"
 #include <pybind11/pybind11.h>
@@ -12,7 +13,7 @@ public:
 	DNNConverterPy(int format_board, int format_move);
 	// C4316
 	void *operator new(size_t size) {
-		return _mm_malloc(size, alignof(DNNConverter));
+		return _mm_malloc(size, alignof(DNNConverterPy));
 	}
 
 	void operator delete(void *p) {
@@ -26,3 +27,4 @@ public:
 	int get_move_index(Move move) const;
 	Move reverse_move_index(int move_index) const;
 };
+#endif
