@@ -49,7 +49,8 @@ class PackedSfenDataSource(UserMinibatchSource):
         move_ary = np.zeros((self.move_dim,), dtype=np.float32)
         move_ary[self._cvt.get_move_index(move)] = 1
         result_ary = np.zeros((1,), dtype=np.float32)
-        result_ary[0] = game_result  # -1 or 1
+        # result_ary[0] = game_result  # -1 or 1
+        result_ary[0] = (game_result + 1) * 0.5  # 0 or 1
         return board, move_ary, result_ary
 
     def stream_infos(self):

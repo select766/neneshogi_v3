@@ -25,6 +25,6 @@ def ResNet(feature_var, board_shape, move_dim, *, ch=16, depth=4, block_depth=3)
         policy = C.reshape(policy, shape=(move_dim,))
         value = res_block(h, block_depth, ch)
         value = C.relu(value)
-        value = Dense(1, activation=C.tanh, name="value")(value)
+        value = Dense(1, activation=C.sigmoid, name="value")(value)
 
     return policy, value
