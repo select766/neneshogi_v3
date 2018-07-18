@@ -41,19 +41,27 @@ class TrainManager:
     batch_size: int
     trained_samples: int
     val_frequency: int
+    first_diverge_check_size: int
+    diverge_criterion: Dict[str, float]
+    average_mean_criterions: Dict[str, float]  # train errorの移動平均
 
-    def __init__(self, epoch_size: int, batch_size: int, val_frequency: int):
+    def __init__(self, epoch_size: int, batch_size: int, val_frequency: int,
+                 initial_lr: float, min_lr: float, first_diverge_check_size: int,
+                 diverge_criterion: Dict[str, float]):
         self.next_action = "train"
-        self.main_criterion = "pe"
+        self.main_criterion = "policy_cle"
         self.last_val_main_criterion = None
-        self.lr = 0.01
+        self.lr = initial_lr
         self.lr_reduce_ratio = 2.0
-        self.min_lr = 1e-4
+        self.min_lr = min_lr
         self.quit_reason = None
         self.epoch_size = epoch_size
         self.batch_size = batch_size
         self.trained_samples = 0
         self.val_frequency = val_frequency
+        self.first_diverge_check_size = first_diverge_check_size
+        self.diverge_criterion = diverge_criterion
+        self.average_mean_criterions = defaultdict(float)
 
     def get_next_action(self):
         if self.quit_reason is not None:
@@ -61,11 +69,31 @@ class TrainManager:
             return {"action": "quit", "reason": self.quit_reason}
         return {"action": self.next_action, "lr": self.lr}
 
+    def _check_diverge(self, mean_criterions: Dict[str, float]) -> bool:
+        """
+        発散基準を満たすかどうかチェックする。
+        指定されたエラー率が閾値以上なら発散したとみなす。
+        :param mean_criterions:
+        :return:
+        """
+        for key, thres in self.diverge_criterion.items():
+            if mean_criterions[key] > thres:
+                return True
+        return False
+
     def put_train_result(self, mean_criterions: Dict[str, float]):
-        v = self.trained_samples // self.val_frequency
+        last_val_cycle = self.trained_samples // self.val_frequency
         self.trained_samples += self.batch_size
-        do_val = self.trained_samples // self.val_frequency > v
+        for k, v in mean_criterions.items():
+            self.average_mean_criterions[k] = self.average_mean_criterions[k] * 0.99 + v * 0.01
+        if self.trained_samples >= self.first_diverge_check_size:
+            # 発散チェック
+            # サンプルによっては特別に悪い場合があるので、移動平均で判定
+            if self._check_diverge(self.average_mean_criterions):
+                self.quit_reason = "diverge"
+        do_val = self.trained_samples // self.val_frequency > last_val_cycle
         if do_val:
+            print("average_mean_criterions", self.average_mean_criterions)
             self.next_action = "val"
 
     def put_val_result(self, mean_criterions: Dict[str, float]):
@@ -97,19 +125,20 @@ def create_shogi_model(board_shape, move_dim, model_config):
     policy, value = model_function(feature_var, board_shape, move_dim, **model_config["kwargs"])
 
     # loss and metric
-    ce = C.cross_entropy_with_softmax(policy, policy_var)
-    pe = C.classification_error(policy, policy_var)
-    pe5 = C.classification_error(policy, policy_var, topN=5)
-    sqe = C.binary_cross_entropy(value, value_var)
-    total_error = ce * 1.0 + sqe * 1.0
+    loss_policy_ce = C.cross_entropy_with_softmax(policy, policy_var)
+    loss_policy_cle = C.classification_error(policy, policy_var)
+    loss_policy_cle5 = C.classification_error(policy, policy_var, topN=5)
+    loss_value_ce = C.binary_cross_entropy(value, value_var)
+    total_error = loss_policy_ce * 1.0 + loss_value_ce * 1.0
 
     return {
         'feature': feature_var,
         'policy': policy_var,
         'value': value_var,
-        'ce': ce,
-        'pe': pe,
-        'sqe': sqe,
+        'losses': {"policy_ce": loss_policy_ce,
+                   "policy_cle": loss_policy_cle,
+                   "policy_cle5": loss_policy_cle5,
+                   "value_ce": loss_value_ce},
         'total_error': total_error,
         'output': C.combine([policy, value])
     }
@@ -139,13 +168,18 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
     val_batchsize = solver_config.get("val_batchsize", batch_size)
 
     # (loss, criterion)のcriterionで評価に必要な変数は含みつつ、スカラーでなければならない(C.combine([sqe, pe])はダメ)
-    criterions = ["sqe", "pe"]
-    criterion = network[criterions[0]]
+    losses = network["losses"]
+    criterions = list(losses.keys())
+    criterion = losses[criterions[0]]
     for c in criterions[1:]:
-        criterion = criterion + network[c]
+        criterion = criterion + losses[c]
     trainer = C.Trainer(network['output'], (network['total_error'], criterion), [learner])
 
-    manager = TrainManager(epoch_size=epoch_size, batch_size=batch_size, val_frequency=epoch_size // 10)
+    val_frequency = solver_config["val_frequency"]
+    manager = TrainManager(epoch_size=epoch_size, batch_size=batch_size, val_frequency=val_frequency,
+                           initial_lr=solver_config["lr"], min_lr=solver_config["lr"] / 1000,
+                           first_diverge_check_size=val_frequency,
+                           diverge_criterion={"policy_cle": 0.95, "value_ce": 0.6})
     last_lr = None
     i = 0
     while True:
@@ -162,8 +196,8 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
             data = {network["feature"]: minibatch[train_source.board_info],
                     network["policy"]: minibatch[train_source.move_info],
                     network["value"]: minibatch[train_source.result_info]}
-            _, result = trainer.train_minibatch(data, outputs=[network[c] for c in criterions])
-            mean_criterions = {c: float(np.mean(result[network[c]])) for c in criterions}
+            _, result = trainer.train_minibatch(data, outputs=[losses[c] for c in criterions])
+            mean_criterions = {c: float(np.mean(result[losses[c]])) for c in criterions}
             i += 1
             if i % 100 == 0:
                 print(i, "criterions", mean_criterions)
@@ -178,9 +212,9 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
                         network["policy"]: minibatch[test_source.move_info],
                         network["value"]: minibatch[test_source.result_info]}
                 # X.forwardのXを生成する過程にoutputsが入ってないといけない
-                _, result = criterion.forward(data, outputs=[network[c] for c in criterions])
+                _, result = criterion.forward(data, outputs=[losses[c] for c in criterions])
                 for c in criterions:
-                    sum_criterions[c] += float(np.sum(result[network[c]]))
+                    sum_criterions[c] += float(np.sum(result[losses[c]]))
                 n_validated_samples += val_batchsize
             mean_criterions = {}
             for k, v in sum_criterions.items():
