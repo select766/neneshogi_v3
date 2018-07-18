@@ -18,12 +18,72 @@ CNTK 2.5.1時点で、今のところ自前で書かないと2つのロスを別
 
 import os
 import argparse
+from collections import defaultdict
+from typing import Dict
+
 import numpy as np
 
 import cntk as C
 from neneshogi import util
 from neneshogi.packed_sfen_data_source import PackedSfenDataSource
 from neneshogi import models
+
+
+class TrainManager:
+    next_action: str
+    main_criterion: str
+    last_val_main_criterion: float
+    lr: float
+    lr_reduce_ratio: float
+    min_lr: float
+    quit_reason: str
+    epoch_size: int
+    batch_size: int
+    trained_samples: int
+    val_frequency: int
+
+    def __init__(self, epoch_size: int, batch_size: int, val_frequency: int):
+        self.next_action = "train"
+        self.main_criterion = "pe"
+        self.last_val_main_criterion = None
+        self.lr = 0.01
+        self.lr_reduce_ratio = 2.0
+        self.min_lr = 1e-4
+        self.quit_reason = None
+        self.epoch_size = epoch_size
+        self.batch_size = batch_size
+        self.trained_samples = 0
+        self.val_frequency = val_frequency
+
+    def get_next_action(self):
+        if self.quit_reason is not None:
+            print(f"quit: {self.quit_reason}")
+            return {"action": "quit", "reason": self.quit_reason}
+        return {"action": self.next_action, "lr": self.lr}
+
+    def put_train_result(self, mean_criterions: Dict[str, float]):
+        v = self.trained_samples // self.val_frequency
+        self.trained_samples += self.batch_size
+        do_val = self.trained_samples // self.val_frequency > v
+        if do_val:
+            self.next_action = "val"
+
+    def put_val_result(self, mean_criterions: Dict[str, float]):
+        main_score = mean_criterions[self.main_criterion]
+        if self.last_val_main_criterion is not None:
+            improve_ratio = 1.0 - main_score / self.last_val_main_criterion
+            print(f"val score improvement: {improve_ratio}")
+            if improve_ratio < 0.01:
+                # 改善がほとんどない
+                # lrを下げる
+                print("reducing lr")
+                self.lr /= self.lr_reduce_ratio
+                if self.lr < self.min_lr:
+                    # 学習終了
+                    self.quit_reason = "lr_below_min"
+
+        self.last_val_main_criterion = main_score
+        self.next_action = "train"
 
 
 # Create the network.
@@ -64,10 +124,11 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
                                         max_samples=ds_train_config["count"] * epochs)
     epoch_size = ds_train_config["count"]
     ds_test_config = solver_config["dataset"]["test"]
+    test_epoch_size = ds_test_config["count"]
     test_source = PackedSfenDataSource(ds_test_config["path"], count=ds_test_config["count"],
                                        skip=ds_test_config["skip"], format_board=model_config["format_board"],
                                        format_move=model_config["format_move"],
-                                       max_samples=C.io.FULL_DATA_SWEEP)
+                                       max_samples=C.io.INFINITELY_REPEAT)
 
     network = create_shogi_model(train_source.board_shape, train_source.move_dim, model_config)
     lr_schedule = C.learning_parameter_schedule(1e-4)
@@ -75,32 +136,57 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
     learner = C.learners.momentum_sgd(network['output'].parameters, lr_schedule, mm_schedule, unit_gain=False,
                                       l2_regularization_weight=5e-4)
     batch_size = solver_config["batchsize"]
+    val_batchsize = solver_config.get("val_batchsize", batch_size)
 
     # (loss, criterion)のcriterionで評価に必要な変数は含みつつ、スカラーでなければならない(C.combine([sqe, pe])はダメ)
-    criterion = network['sqe'] + network["pe"] * 0
+    criterions = ["sqe", "pe"]
+    criterion = network[criterions[0]]
+    for c in criterions[1:]:
+        criterion = criterion + network[c]
     trainer = C.Trainer(network['output'], (network['total_error'], criterion), [learner])
 
-    for i in range(100):
-        for j in range(10):
+    manager = TrainManager(epoch_size=epoch_size, batch_size=batch_size, val_frequency=epoch_size // 10)
+    last_lr = None
+    i = 0
+    while True:
+        action = manager.get_next_action()
+        if action["action"] == "quit":
+            break
+        if action["action"] == "train":
+            # train 1 batch
+            if action["lr"] != last_lr:
+                print(f"updating lr from {last_lr} to {action['lr']}")
+                last_lr = action["lr"]
+                learner.reset_learning_rate(C.learning_parameter_schedule(last_lr))
             minibatch = train_source.next_minibatch(batch_size, 1, 0)
             data = {network["feature"]: minibatch[train_source.board_info],
                     network["policy"]: minibatch[train_source.move_info],
                     network["value"]: minibatch[train_source.result_info]}
-            _, result = trainer.train_minibatch(data, outputs=[network["sqe"], network["pe"]])
-            sqe = result[network["sqe"]]
-            pe = result[network["pe"]]
-            print(j, "sqe", np.mean(sqe), "pe", np.mean(pe))
-        print("VALIDATION")
-        for j in range(10):
-            minibatch = test_source.next_minibatch(batch_size, 1, 0)
-            data = {network["feature"]: minibatch[test_source.board_info],
-                    network["policy"]: minibatch[test_source.move_info],
-                    network["value"]: minibatch[test_source.result_info]}
-            # X.forwardのXを生成する過程にoutputsが入ってないといけない
-            _, result = criterion.forward(data, outputs=[network["sqe"], network["pe"]])
-            sqe = result[network["sqe"]]
-            pe = result[network["pe"]]
-            print(j, "V", "sqe", np.mean(sqe), "pe", np.mean(pe))
+            _, result = trainer.train_minibatch(data, outputs=[network[c] for c in criterions])
+            mean_criterions = {c: float(np.mean(result[network[c]])) for c in criterions}
+            i += 1
+            if i % 100 == 0:
+                print(i, "criterions", mean_criterions)
+            manager.put_train_result(mean_criterions)
+        if action["action"] == "val":
+            # val 1 epoch
+            n_validated_samples = 0
+            sum_criterions = defaultdict(float)
+            while n_validated_samples < test_epoch_size:
+                minibatch = test_source.next_minibatch(val_batchsize, 1, 0)
+                data = {network["feature"]: minibatch[test_source.board_info],
+                        network["policy"]: minibatch[test_source.move_info],
+                        network["value"]: minibatch[test_source.result_info]}
+                # X.forwardのXを生成する過程にoutputsが入ってないといけない
+                _, result = criterion.forward(data, outputs=[network[c] for c in criterions])
+                for c in criterions:
+                    sum_criterions[c] += float(np.sum(result[network[c]]))
+                n_validated_samples += val_batchsize
+            mean_criterions = {}
+            for k, v in sum_criterions.items():
+                mean_criterions[k] = v / n_validated_samples
+            print("val_criterions", mean_criterions)
+            manager.put_val_result(mean_criterions)
 
 
 if __name__ == '__main__':
