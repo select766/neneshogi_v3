@@ -37,7 +37,7 @@ def save_checkpoint(workdir, model_config, train_manager, data_sources, model):
                             "nene_{}_{}.cmf".format(model_config["format_board"], model_config["format_move"])))
     status = {"train_manager": train_manager,
               "ds_train_state": data_sources["train"].get_checkpoint_state(),
-              "ds_test_state": data_sources["test"].get_checkpoint_state()}
+              "ds_val_state": data_sources["val"].get_checkpoint_state()}
     with open(os.path.join(cp_dir, "status.bin"), "wb") as f:
         pickle.dump(status, f, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -47,7 +47,7 @@ def load_checkpoint(workdir, model_config, data_sources):
     with open(os.path.join(cp_dir, "status.bin"), "rb") as f:
         status = pickle.load(f)
     data_sources["train"].restore_from_checkpoint(status["ds_train_state"])
-    data_sources["test"].restore_from_checkpoint(status["ds_test_state"])
+    data_sources["val"].restore_from_checkpoint(status["ds_val_state"])
     return status["train_manager"]
 
 
@@ -97,10 +97,10 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
                                         format_move=model_config["format_move"],
                                         max_samples=ds_train_config["count"] * epochs)
     epoch_size = ds_train_config["count"]
-    ds_test_config = solver_config["dataset"]["test"]
-    test_epoch_size = ds_test_config["count"]
-    test_source = PackedSfenDataSource(ds_test_config["path"], count=ds_test_config["count"],
-                                       skip=ds_test_config["skip"], format_board=model_config["format_board"],
+    ds_val_config = solver_config["dataset"]["val"]
+    val_epoch_size = ds_val_config["count"]
+    val_source = PackedSfenDataSource(ds_val_config["path"], count=ds_val_config["count"],
+                                       skip=ds_val_config["skip"], format_board=model_config["format_board"],
                                        format_move=model_config["format_move"],
                                        max_samples=C.io.INFINITELY_REPEAT)
 
@@ -128,7 +128,7 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
 
     val_frequency = solver_config["val_frequency"]
     if restore_path:
-        manager = load_checkpoint(workdir, model_config, {"train": train_source, "test": test_source})
+        manager = load_checkpoint(workdir, model_config, {"train": train_source, "val": val_source})
     else:
         manager = TrainManager(epoch_size=epoch_size, batch_size=batch_size, val_frequency=val_frequency,
                                initial_lr=solver_config["lr"], min_lr=solver_config["lr"] / 1000,
@@ -160,11 +160,11 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
             # val 1 epoch
             n_validated_samples = 0
             sum_criterions = defaultdict(float)
-            while n_validated_samples < test_epoch_size:
-                minibatch = test_source.next_minibatch(val_batchsize, 1, 0)
-                data = {network["feature"]: minibatch[test_source.board_info],
-                        network["policy"]: minibatch[test_source.move_info],
-                        network["value"]: minibatch[test_source.result_info]}
+            while n_validated_samples < val_epoch_size:
+                minibatch = val_source.next_minibatch(val_batchsize, 1, 0)
+                data = {network["feature"]: minibatch[val_source.board_info],
+                        network["policy"]: minibatch[val_source.move_info],
+                        network["value"]: minibatch[val_source.result_info]}
                 # X.forwardのXを生成する過程にoutputsが入ってないといけない
                 _, result = criterion.forward(data, outputs=[losses[c] for c in criterions])
                 for c in criterions:
@@ -176,7 +176,7 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
             print("val_criterions", mean_criterions)
             manager.put_val_result(mean_criterions)
             print("saving")
-            save_checkpoint(workdir, model_config, manager, {"train": train_source, "test": test_source},
+            save_checkpoint(workdir, model_config, manager, {"train": train_source, "val": val_source},
                             network["output"])
 
 
