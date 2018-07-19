@@ -79,7 +79,7 @@ def create_shogi_model(board_shape, move_dim, model_config, restore_path=None):
     value_var = C.input_variable(1)
 
     if restore_path:
-        print(f"restoring from {restore_path}")
+        logging.info(f"restoring from {restore_path}")
         model_function = C.load_model(restore_path)
         combined = model_function(feature_var)
         policy = combined[0]
@@ -163,7 +163,7 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
         if action["action"] == "train":
             # train 1 batch
             if action["lr"] != last_lr:
-                print(f"updating lr from {last_lr} to {action['lr']}")
+                logging.info(f"updating lr from {last_lr} to {action['lr']}")
                 last_lr = action["lr"]
                 learner.reset_learning_rate(C.learning_parameter_schedule(last_lr))
             minibatch = train_source.next_minibatch(batch_size, 1, 0)
@@ -178,6 +178,7 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
             manager.put_train_result(mean_criterions)
         if action["action"] == "val":
             # val 1 epoch
+            logging.info("validating")
             n_validated_samples = 0
             sum_criterions = defaultdict(float)
             while n_validated_samples < val_epoch_size:
@@ -195,7 +196,7 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
                 mean_criterions[k] = v / n_validated_samples
             logger.info(f"val_criterions, {mean_criterions}")
             manager.put_val_result(mean_criterions)
-            print("saving")
+            logging.info("saving")
             save_checkpoint(workdir, model_config, manager, {"train": train_source, "val": val_source},
                             network["output"])
 
