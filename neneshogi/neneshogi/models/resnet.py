@@ -11,7 +11,7 @@ def res_block(input_var, count, ch):
     return h + input_var
 
 
-def ResNet(feature_var, board_shape, move_dim, *, ch=16, depth=4, block_depth=3):
+def ResNet(feature_var, board_shape, move_dim, *, ch=16, depth=4, block_depth=3, spatial_bias=False):
     with C.layers.default_options(init=C.glorot_uniform()):
         h = feature_var
         h = Convolution2D(5, ch, pad=True, bias=False)(h)
@@ -21,7 +21,10 @@ def ResNet(feature_var, board_shape, move_dim, *, ch=16, depth=4, block_depth=3)
             h = res_block(h, block_depth, ch)
         policy = res_block(h, block_depth, ch)
         policy = C.relu(policy)
-        policy = Convolution2D(3, (move_dim // 81), pad=True, bias=True)(policy)
+        policy = Convolution2D(3, (move_dim // 81), pad=True, bias=not spatial_bias)(policy)
+        if spatial_bias:
+            spatial_bias_param = C.parameter((move_dim // 81, 9, 9))
+            policy = C.plus(policy, spatial_bias_param)
         policy = C.reshape(policy, shape=(move_dim,))
         value = res_block(h, block_depth, ch)
         value = C.relu(value)
