@@ -1,5 +1,8 @@
 from collections import defaultdict
 from typing import Dict
+from logging import getLogger
+
+logger = getLogger(__name__)
 
 
 class TrainManager:
@@ -38,7 +41,7 @@ class TrainManager:
 
     def get_next_action(self):
         if self.quit_reason is not None:
-            print(f"quit: {self.quit_reason}")
+            logger.warning(f"quit: {self.quit_reason}")
             return {"action": "quit", "reason": self.quit_reason}
         return {"action": self.next_action, "lr": self.lr}
 
@@ -66,14 +69,14 @@ class TrainManager:
                 self.quit_reason = "diverge"
         do_val = self.trained_samples // self.val_frequency > last_val_cycle
         if do_val:
-            print("average_mean_criterions", self.average_mean_criterions)
+            logger.info(f"average_mean_criterions, {self.average_mean_criterions}")
             self.next_action = "val"
 
     def put_val_result(self, mean_criterions: Dict[str, float]):
         main_score = mean_criterions[self.main_criterion]
         if self.last_val_main_criterion is not None:
             improve_ratio = 1.0 - main_score / self.last_val_main_criterion
-            print(f"val score improvement: {improve_ratio}")
+            logger.info(f"val score improvement: {improve_ratio}")
             if improve_ratio < 0.01:
                 # 改善がほとんどない
                 # lrを下げる

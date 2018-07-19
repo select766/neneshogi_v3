@@ -20,6 +20,7 @@ import os
 import argparse
 from collections import defaultdict
 import pickle
+import logging
 
 import numpy as np
 
@@ -28,10 +29,30 @@ from neneshogi import util
 from neneshogi.packed_sfen_data_source import PackedSfenDataSource
 from neneshogi import models
 from neneshogi.train_manager import TrainManager
+import neneshogi.log
+
+logger = logging.getLogger(__name__)
+
+
+def find_latest_checkpoint_dir(workdir):
+    cp_base_dir = os.path.join(workdir, "checkpoint")
+    if not os.path.exists(cp_base_dir):
+        return None
+    latest_num = -1
+    latest_dir = None
+    for obj in os.listdir(cp_base_dir):
+        if obj.startswith("train_"):
+            num = int(obj[6:])
+            if num > latest_num:
+                latest_num = num
+                latest_dir = obj
+    if latest_dir is not None:
+        return os.path.join(cp_base_dir, latest_dir)
+    return None
 
 
 def save_checkpoint(workdir, model_config, train_manager, data_sources, model):
-    cp_dir = os.path.join(workdir, "checkpoint")
+    cp_dir = os.path.join(workdir, "checkpoint", f"train_{train_manager.trained_samples}")
     os.makedirs(cp_dir, exist_ok=True)
     model.save(os.path.join(cp_dir,
                             "nene_{}_{}.cmf".format(model_config["format_board"], model_config["format_move"])))
@@ -42,9 +63,8 @@ def save_checkpoint(workdir, model_config, train_manager, data_sources, model):
         pickle.dump(status, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def load_checkpoint(workdir, model_config, data_sources):
-    cp_dir = os.path.join(workdir, "checkpoint")
-    with open(os.path.join(cp_dir, "status.bin"), "rb") as f:
+def load_checkpoint(checkpoint_dir, model_config, data_sources):
+    with open(os.path.join(checkpoint_dir, "status.bin"), "rb") as f:
         status = pickle.load(f)
     data_sources["train"].restore_from_checkpoint(status["ds_train_state"])
     data_sources["val"].restore_from_checkpoint(status["ds_val_state"])
@@ -67,7 +87,6 @@ def create_shogi_model(board_shape, move_dim, model_config, restore_path=None):
     else:
         model_function = getattr(models, model_config["name"])
         policy, value = model_function(feature_var, board_shape, move_dim, **model_config["kwargs"])
-
 
     # loss and metric
     loss_policy_ce = C.cross_entropy_with_softmax(policy, policy_var)
@@ -100,13 +119,14 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
     ds_val_config = solver_config["dataset"]["val"]
     val_epoch_size = ds_val_config["count"]
     val_source = PackedSfenDataSource(ds_val_config["path"], count=ds_val_config["count"],
-                                       skip=ds_val_config["skip"], format_board=model_config["format_board"],
-                                       format_move=model_config["format_move"],
-                                       max_samples=C.io.INFINITELY_REPEAT)
+                                      skip=ds_val_config["skip"], format_board=model_config["format_board"],
+                                      format_move=model_config["format_move"],
+                                      max_samples=C.io.INFINITELY_REPEAT)
 
     restore_path = None
-    if restore:
-        restore_path = os.path.join(workdir, "checkpoint",
+    restore_cp_dir = find_latest_checkpoint_dir(workdir)
+    if restore and restore_cp_dir is not None:
+        restore_path = os.path.join(restore_cp_dir,
                                     "nene_{}_{}.cmf".format(model_config["format_board"], model_config["format_move"]))
         if not os.path.exists(restore_path):
             restore_path = None
@@ -128,7 +148,7 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
 
     val_frequency = solver_config["val_frequency"]
     if restore_path:
-        manager = load_checkpoint(workdir, model_config, {"train": train_source, "val": val_source})
+        manager = load_checkpoint(restore_cp_dir, model_config, {"train": train_source, "val": val_source})
     else:
         manager = TrainManager(epoch_size=epoch_size, batch_size=batch_size, val_frequency=val_frequency,
                                initial_lr=solver_config["lr"], min_lr=solver_config["lr"] / 1000,
@@ -154,7 +174,7 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
             mean_criterions = {c: float(np.mean(result[losses[c]])) for c in criterions}
             i += 1
             if i % 100 == 0:
-                print(i, "criterions", mean_criterions)
+                logger.info(f"{manager.trained_samples}, criterions, {mean_criterions}")
             manager.put_train_result(mean_criterions)
         if action["action"] == "val":
             # val 1 epoch
@@ -173,7 +193,7 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
             mean_criterions = {}
             for k, v in sum_criterions.items():
                 mean_criterions[k] = v / n_validated_samples
-            print("val_criterions", mean_criterions)
+            logger.info(f"val_criterions, {mean_criterions}")
             manager.put_val_result(mean_criterions)
             print("saving")
             save_checkpoint(workdir, model_config, manager, {"train": train_source, "val": val_source},
@@ -199,4 +219,8 @@ if __name__ == '__main__':
 
     solver_config = util.yaml_load(os.path.join(args.workdir, "solver.yaml"))
     model_config = util.yaml_load(os.path.join(args.workdir, "model.yaml"))
-    shogi_train_and_eval(solver_config, model_config, args.workdir, restore=not args.restart)
+    neneshogi.log.init(os.path.join(args.workdir, "train.log"))
+    try:
+        shogi_train_and_eval(solver_config, model_config, args.workdir, restore=not args.restart)
+    except Exception as ex:
+        logger.exception("Aborted with exception")
