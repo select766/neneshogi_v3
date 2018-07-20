@@ -20,6 +20,8 @@ shared_ptr<DNNConverter> cvt;
 void USI::extra_option(USI::OptionsMap & o)
 {
 	o["GPU"] << Option(-1, -1, 16);//使用するGPU番号(-1==CPU)
+	o["format_board"] << Option(0, 0, 16);//DNNのboard表現形式
+	o["format_move"] << Option(0, 0, 16);//DNNのmove表現形式
 }
 
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
@@ -41,12 +43,12 @@ void  Search::clear()
 	// 本来はファイル名からフォーマットを推論したい
 	// 将棋所からは日本語WindowsだとオプションがCP932で来る。mbstowcsにそれを認識させ、日本語ファイル名を正しく変換
 	setlocale(LC_ALL, "");
-	int format_board = 0, format_move = 0;
+	int format_board = (int)Options["format_board"], format_move = (int)Options["format_move"];
 	wchar_t model_path[1024];
 	string evaldir = Options["EvalDir"];
 	wchar_t evaldir_w[1024];
 	mbstowcs(evaldir_w, evaldir.c_str(), sizeof(model_path) / sizeof(model_path[0]) - 1); // C4996
-	swprintf(model_path, sizeof(model_path) / sizeof(model_path[0]), L"%s/nene_%d_%d.cmf", evaldir_w, format_board, format_board);
+	swprintf(model_path, sizeof(model_path) / sizeof(model_path[0]), L"%s/nene_%d_%d.cmf", evaldir_w, format_board, format_move);
 	modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
 	cvt = shared_ptr<DNNConverter>(new DNNConverter(format_board, format_move));
 }
