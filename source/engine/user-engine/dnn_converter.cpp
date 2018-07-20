@@ -11,7 +11,13 @@ vector<int> DNNConverter::board_shape() const
 
 vector<int> DNNConverter::move_shape() const
 {
-	return vector<int>{139, 9, 9};
+	switch (format_move) {
+	case 0:
+		return vector<int>{139, 9, 9};
+	case 1:
+		return vector<int>{27, 9, 9};
+	}
+	return vector<int>();
 }
 
 

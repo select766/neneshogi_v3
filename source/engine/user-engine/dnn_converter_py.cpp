@@ -16,12 +16,14 @@ DNNConverterPy::DNNConverterPy(int format_board, int format_move) : cvt(format_b
 
 py::tuple DNNConverterPy::board_shape() const
 {
-	return py::make_tuple(85, 9, 9);
+	auto bs = cvt.board_shape();
+	return py::make_tuple(bs[0], bs[1], bs[2]);
 }
 
 py::tuple DNNConverterPy::move_shape() const
 {
-	return py::make_tuple(139, 9, 9);
+	auto ms = cvt.move_shape();
+	return py::make_tuple(ms[0], ms[1], ms[2]);
 }
 
 
@@ -38,18 +40,21 @@ void DNNConverterPy::set_sfen(std::string sfen)
 }
 
 py::array_t<float> DNNConverterPy::get_board_array() const {
-	float buf[85 * 9 * 9] = {};
+	auto bs = cvt.board_shape();
+	float *buf = new float[bs[0] * bs[1] * bs[2]]();
 	cvt.get_board_array(pos, buf);
-	return py::array_t<float>(
+	auto ary = py::array_t<float>(
 		py::buffer_info(
 			buf,
 			sizeof(float),
 			py::format_descriptor<float>::format(),
 			3,
-			{ 85, 9, 9 },
-			{ sizeof(float) * 9 * 9,  sizeof(float) * 9,  sizeof(float) }
+			bs,
+			{ sizeof(float) * bs[1] * bs[2],  sizeof(float) * bs[2],  sizeof(float) }
 		)
 		);
+	delete[] buf;
+	return ary;
 }
 int DNNConverterPy::get_move_index(Move move) const
 {
