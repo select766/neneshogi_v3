@@ -153,7 +153,10 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
         manager = TrainManager(epoch_size=epoch_size, batch_size=batch_size, val_frequency=val_frequency,
                                initial_lr=solver_config["lr"], min_lr=solver_config["lr"] / 1000,
                                first_diverge_check_size=val_frequency,
-                               diverge_criterion={"policy_cle": 0.95, "value_ce": 0.6})
+                               diverge_criterion={"policy_cle": 0.95, "value_ce": 0.6},
+                               lr_reduce_ratio=solver_config["lr_reduce"]["ratio"],
+                               lr_reduce_average_count=solver_config["lr_reduce"]["average_count"],
+                               lr_reduce_threshold=solver_config["lr_reduce"]["threshold"])
     last_lr = None
     i = 0
     while True:
@@ -174,7 +177,7 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
             mean_criterions = {c: float(np.mean(result[losses[c]])) for c in criterions}
             i += 1
             if i % 100 == 0:
-                logger.info(f"{manager.trained_samples}, criterions, {mean_criterions}")
+                logger.info(f"{manager.trained_samples}, lr, {action['lr']}, criterions, {mean_criterions}")
             manager.put_train_result(mean_criterions)
         if action["action"] == "val":
             # val 1 epoch

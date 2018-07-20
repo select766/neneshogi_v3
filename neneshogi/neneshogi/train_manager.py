@@ -1,6 +1,7 @@
 from collections import defaultdict
-from typing import Dict
+from typing import Dict, List
 from logging import getLogger
+import numpy as np
 
 logger = getLogger(__name__)
 
@@ -8,9 +9,11 @@ logger = getLogger(__name__)
 class TrainManager:
     next_action: str
     main_criterion: str
-    last_val_main_criterion: float
     lr: float
     lr_reduce_ratio: float
+    lr_reduce_average_count: int
+    lr_reduce_threshold: float
+    lr_reduce_val_results: List[float]
     min_lr: float
     quit_reason: str
     epoch_size: int
@@ -23,12 +26,16 @@ class TrainManager:
 
     def __init__(self, epoch_size: int, batch_size: int, val_frequency: int,
                  initial_lr: float, min_lr: float, first_diverge_check_size: int,
-                 diverge_criterion: Dict[str, float]):
+                 diverge_criterion: Dict[str, float], lr_reduce_ratio: float,
+                 lr_reduce_average_count: int, lr_reduce_threshold: float):
         self.next_action = "train"
         self.main_criterion = "policy_cle"
         self.last_val_main_criterion = None
         self.lr = initial_lr
-        self.lr_reduce_ratio = 2.0
+        self.lr_reduce_ratio = lr_reduce_ratio
+        self.lr_reduce_average_count = lr_reduce_average_count
+        self.lr_reduce_threshold = lr_reduce_threshold
+        self.lr_reduce_val_results = []
         self.min_lr = min_lr
         self.quit_reason = None
         self.epoch_size = epoch_size
@@ -74,13 +81,19 @@ class TrainManager:
 
     def put_val_result(self, mean_criterions: Dict[str, float]):
         main_score = mean_criterions[self.main_criterion]
-        if self.last_val_main_criterion is not None:
-            improve_ratio = 1.0 - main_score / self.last_val_main_criterion
+        self.lr_reduce_val_results.append(main_score)
+        if len(self.lr_reduce_val_results) >= self.lr_reduce_average_count * 2 and \
+                len(self.lr_reduce_val_results) % self.lr_reduce_average_count == 0:
+            # x = scores[-10:], y = scores[-20:-10]として、
+            # (y - x) / y <  lr_reduce_thresholdならlrを下げる
+            x = np.mean(self.lr_reduce_val_results[-self.lr_reduce_average_count:])
+            y = np.mean(self.lr_reduce_val_results[-self.lr_reduce_average_count * 2:-self.lr_reduce_average_count])
+            improve_ratio = 1.0 - x / y
             logger.info(f"val score improvement: {improve_ratio}")
-            if improve_ratio < 0.01:
+            if improve_ratio < self.lr_reduce_threshold:
                 # 改善がほとんどない
                 # lrを下げる
-                print("reducing lr")
+                logger.info("reduce lr")
                 self.lr /= self.lr_reduce_ratio
                 if self.lr < self.min_lr:
                     # 学習終了
