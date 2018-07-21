@@ -86,7 +86,7 @@ void DNNConverter::get_board_array(const Position & pos, float *buf) const
 	for (int i = 0; i < 2; i++) {
 		Hand hand = hands[i];
 		//歩は最大8枚
-		fill_channel_range(buf, ch_ofs, (std::min)(ch_ofs + hand_count(hand, PAWN), 8), 1.0);
+		fill_channel_range(buf, ch_ofs, ch_ofs + (std::min)(hand_count(hand, PAWN), 8), 1.0);
 		ch_ofs += 8;
 		fill_channel_range(buf, ch_ofs, ch_ofs + hand_count(hand, LANCE), 1.0);
 		ch_ofs += 4;
