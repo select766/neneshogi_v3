@@ -134,7 +134,7 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
     lr_schedule = C.learning_parameter_schedule(1e-4)
     mm_schedule = C.learners.momentum_schedule(0.9)
     learner = C.learners.momentum_sgd(network['output'].parameters, lr_schedule, mm_schedule, unit_gain=False,
-                                      l2_regularization_weight=5e-4)
+                                      l2_regularization_weight=solver_config.get("l2_regularization", 0.0))
     batch_size = solver_config["batchsize"]
     val_batchsize = solver_config.get("val_batchsize", batch_size)
 
