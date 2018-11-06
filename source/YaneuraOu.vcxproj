@@ -666,6 +666,7 @@
     <ClCompile>
       <OpenMPSupport>
       </OpenMPSupport>
+      <PreprocessorDefinitions>USER_ENGINE_MCTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release-user-py|x64'">
@@ -791,6 +792,8 @@
     <ClCompile Include="engine\user-engine\dnn_converter.cpp" />
     <ClCompile Include="engine\user-engine\dnn_converter_py.cpp" />
     <ClCompile Include="engine\user-engine\user-search.cpp" />
+    <ClCompile Include="engine\user-engine\user-search_mcts.cpp" />
+    <ClCompile Include="engine\user-engine\user-search_policy.cpp" />
     <ClCompile Include="eval\evaluate_bona_piece.cpp" />
     <ClCompile Include="eval\evaluate_io.cpp" />
     <ClCompile Include="eval\evaluate.cpp" />

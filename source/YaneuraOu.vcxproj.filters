@@ -483,6 +483,12 @@
     <ClCompile Include="engine\user-engine\dnn_converter_py.cpp">
       <Filter>リソース ファイル\engine\user-engine</Filter>
     </ClCompile>
+    <ClCompile Include="engine\user-engine\user-search_mcts.cpp">
+      <Filter>リソース ファイル\engine\user-engine</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\user-engine\user-search_policy.cpp">
+      <Filter>リソース ファイル\engine\user-engine</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="..\docs\USI拡張コマンド.txt">
