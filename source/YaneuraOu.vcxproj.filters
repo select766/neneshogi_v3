@@ -310,9 +310,6 @@
     <ClInclude Include="engine\user-engine\mate-search_for_mcts.h">
       <Filter>リソース ファイル\engine\user-engine</Filter>
     </ClInclude>
-    <ClInclude Include="engine\user-engine\user-search_common.h">
-      <Filter>リソース ファイル\engine\user-engine</Filter>
-    </ClInclude>
     <ClInclude Include="engine\user-engine\ipqueue.h">
       <Filter>リソース ファイル\engine\user-engine</Filter>
     </ClInclude>
@@ -505,9 +502,6 @@
       <Filter>リソース ファイル\engine\user-engine</Filter>
     </ClCompile>
     <ClCompile Include="engine\user-engine\mate-search_for_mcts.cpp">
-      <Filter>リソース ファイル\engine\user-engine</Filter>
-    </ClCompile>
-    <ClCompile Include="engine\user-engine\user-search_common.cpp">
       <Filter>リソース ファイル\engine\user-engine</Filter>
     </ClCompile>
     <ClCompile Include="engine\user-engine\dnn_thread.cpp">

@@ -4,9 +4,10 @@
 #include <numeric>
 #include <functional>
 #include "CNTKLibrary.h"
-#include "user-search_common.h"
 #include "mate-search_for_mcts.h"
 #include "dnn_converter.h"
+#include "ipqueue.h"
+#include "dnn_eval_obj.h"
 #include "dnn_thread.h"
 
 #ifdef USER_ENGINE_MCTS
@@ -343,8 +344,6 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["value_slope"] << Option("1.0");
 	o["virtual_loss"] << Option(1, 0, 100);
 	o["clear_table"] << Option(false);
-	o["model"] << Option("<empty>");
-	o["initial_tt"] << Option("<empty>");
 	o["batch_size"] << Option(16, 1, 65536);
 	o["process_per_gpu"] << Option(1, 1, 10);
 	o["gpu_max"] << Option(0, -1, 16);
@@ -435,21 +434,6 @@ void  Search::clear()
 	}
 
 	hash_init_thread.join();
-
-	string initial_tt = (string)Options["initial_tt"];
-	if (initial_tt.size() > 0)
-	{
-		sync_cout << "info string loading initial tt" << sync_endl;
-		if (node_hash->load(initial_tt))
-		{
-			int hashfull = (int)((long long)node_hash->used * 1000 / node_hash->uct_hash_size);
-			sync_cout << "info string loading ok hashfull " << hashfull << sync_endl;
-		}
-		else
-		{
-			sync_cout << "info string failed loading initial tt" << sync_endl;
-		}
-	}
 
 #ifdef _DEBUG
 	std::this_thread::sleep_for(std::chrono::seconds(5));
