@@ -405,7 +405,6 @@ void  Search::clear()
 
 	if (!dnn_initialized)
 	{
-		//TODO DNN評価モジュール初期化
 		// 評価デバイス選択
 		int gpu_id = (int)Options["GPU"];
 		if (gpu_id >= 0)
@@ -432,6 +431,7 @@ void  Search::clear()
 
 		// 評価スレッドを立てる
 		dnn_thread_thread = new std::thread(dnn_thread_main);
+		dnn_initialized = true;
 	}
 
 	hash_init_thread.join();
