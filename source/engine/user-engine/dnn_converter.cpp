@@ -46,6 +46,7 @@ void DNNConverter::get_board_array(const Position & pos, float *buf) const
 	* 後手番の際は、盤面・駒の所属を反転して先手番の状態にする。
 	* 手数は現在入れていない。Position.set_from_packed_sfenに要素がないため。
 	*/
+	fill_channel_range(buf, 0, 85, 0.0F);
 	if (pos.side_to_move() == BLACK) {
 		for (Square i = SQ_ZERO; i < SQ_NB; i++) {
 			Piece p = pos.piece_on(i);

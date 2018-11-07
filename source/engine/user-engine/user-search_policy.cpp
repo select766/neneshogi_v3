@@ -1,4 +1,4 @@
-#include "../../extra/all.h"
+﻿#include "../../extra/all.h"
 #include "CNTKLibrary.h"
 #include "dnn_converter.h"
 #include <numeric>
@@ -14,33 +14,33 @@ CNTK::DeviceDescriptor device = CNTK::DeviceDescriptor::CPUDevice();
 CNTK::FunctionPtr modelFunc;
 shared_ptr<DNNConverter> cvt;
 
-// USI�ɒǉ��I�v�V������ݒ肵�����Ƃ��́A���̊֐����`���邱�ƁB
-// USI::init()�̂Ȃ�����R�[���o�b�N�����B
+// USIに追加オプションを設定したいときは、この関数を定義すること。
+// USI::init()のなかからコールバックされる。
 void USI::extra_option(USI::OptionsMap & o)
 {
-	o["GPU"] << Option(-1, -1, 16);//�g�p����GPU�ԍ�(-1==CPU)
-	o["format_board"] << Option(0, 0, 16);//DNN��board�\���`��
-	o["format_move"] << Option(0, 0, 16);//DNN��move�\���`��
+	o["GPU"] << Option(-1, -1, 16);//使用するGPU番号(-1==CPU)
+	o["format_board"] << Option(0, 0, 16);//DNNのboard表現形式
+	o["format_move"] << Option(0, 0, 16);//DNNのmove表現形式
 }
 
-// �N�����ɌĂяo�����B���Ԃ̂�����Ȃ��T���֌W�̏����������͂����ɏ������ƁB
+// 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
 void Search::init()
 {
 }
 
-// isready�R�}���h�̉������ɌĂяo�����B���Ԃ̂����鏈���͂����ɏ������ƁB
+// isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
 void  Search::clear()
 {
-	// �]���f�o�C�X�I��
+	// 評価デバイス選択
 	int gpu_id = (int)Options["GPU"];
 	if (gpu_id >= 0)
 	{
 		device = CNTK::DeviceDescriptor::GPUDevice((unsigned int)gpu_id);
 	}
 
-	// ���f���̃��[�h
-	// �{���̓t�@�C��������t�H�[�}�b�g�𐄘_������
-	// ����������͓��{��Windows���ƃI�v�V������CP932�ŗ���Bmbstowcs�ɂ����F�������A���{��t�@�C�����𐳂����ϊ�
+	// モデルのロード
+	// 本来はファイル名からフォーマットを推論したい
+	// 将棋所からは日本語WindowsだとオプションがCP932で来る。mbstowcsにそれを認識させ、日本語ファイル名を正しく変換
 	setlocale(LC_ALL, "");
 	int format_board = (int)Options["format_board"], format_move = (int)Options["format_move"];
 	wchar_t model_path[1024];
@@ -52,9 +52,9 @@ void  Search::clear()
 	cvt = shared_ptr<DNNConverter>(new DNNConverter(format_board, format_move));
 }
 
-// �T���J�n���ɌĂяo�����B
-// ���̊֐����ŏ��������I��点�Aslave�X���b�h���N������Thread::search()���Ăяo���B
-// ���̂���slave�X���b�h���I�������A�x�X�g�Ȏw�����Ԃ����ƁB
+// 探索開始時に呼び出される。
+// この関数内で初期化を終わらせ、slaveスレッドを起動してThread::search()を呼び出す。
+// そのあとslaveスレッドを終了させ、ベストな指し手を返すこと。
 void MainThread::think()
 {
 	sync_cout << "info string start evaluation" << sync_endl;
@@ -112,9 +112,9 @@ void MainThread::think()
 	sync_cout << "bestmove " << bestMove << sync_endl;
 }
 
-// �T���{�́B���񉻂��Ă���ꍇ�A������slave�̃G���g���[�|�C���g�B
-// MainThread::search()��virtual�ɂȂ��Ă���think()���Ăяo�����̂ŁAMainThread::think()����
-// ���̊֐����Ăяo�������Ƃ��́AThread::search()�Ƃ��邱�ƁB
+// 探索本体。並列化している場合、ここがslaveのエントリーポイント。
+// MainThread::search()はvirtualになっていてthink()が呼び出されるので、MainThread::think()から
+// この関数を呼び出したいときは、Thread::search()とすること。
 void Thread::search()
 {
 }

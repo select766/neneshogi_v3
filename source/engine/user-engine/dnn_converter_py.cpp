@@ -1,10 +1,10 @@
-#ifdef PYMODULE
+ï»¿#ifdef PYMODULE
 #include "dnn_converter_py.h"
 static bool pymodule_initialized = false;
 DNNConverterPy::DNNConverterPy(int format_board, int format_move) : cvt(format_board, format_move)
 {
 	if (!pymodule_initialized) {
-		// mainŠÖ”‚Æ“¯“™‚Ì‰Šú‰»‚ğ‚·‚é
+		// mainé–¢æ•°ã¨åŒç­‰ã®åˆæœŸåŒ–ã‚’ã™ã‚‹
 		Bitboards::init();
 		Position::init();
 		Search::init();
@@ -31,7 +31,7 @@ bool DNNConverterPy::set_packed_sfen(const char* packed_sfen)
 {
 	const PackedSfen* sfen = reinterpret_cast<const PackedSfen*>(packed_sfen);
 	return pos.set_from_packed_sfen(*sfen, &init_state, Threads.main()) == 0;
-	// gamePly = 0‚Æ‚È‚é‚Ì‚Å’ˆÓ
+	// gamePly = 0ã¨ãªã‚‹ã®ã§æ³¨æ„
 }
 
 void DNNConverterPy::set_sfen(std::string sfen)

@@ -413,6 +413,11 @@
 #define EVAL_MATERIAL
 #define USE_SEE
 #define USE_SFEN_PACKER
+#define USE_ENTERING_KING_WIN
+#define USE_TIME_MANAGEMENT
+#define USE_KEY_AFTER
+#define USE_MATE_1PLY
+//#define USE_MCTS_MATE_ENGINE
 #endif
 
 // --------------------

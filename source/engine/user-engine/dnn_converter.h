@@ -1,4 +1,5 @@
-﻿#include "../../extra/all.h"
+﻿#pragma once
+#include "../../extra/all.h"
 
 class DNNConverter {
 	int format_board, format_move;

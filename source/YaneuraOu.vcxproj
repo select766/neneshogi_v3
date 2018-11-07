@@ -716,6 +716,11 @@
     <ClInclude Include="engine\mate-engine\mate-search.h" />
     <ClInclude Include="engine\user-engine\dnn_converter.h" />
     <ClInclude Include="engine\user-engine\dnn_converter_py.h" />
+    <ClInclude Include="engine\user-engine\dnn_eval_obj.h" />
+    <ClInclude Include="engine\user-engine\dnn_thread.h" />
+    <ClInclude Include="engine\user-engine\ipqueue.h" />
+    <ClInclude Include="engine\user-engine\mate-search_for_mcts.h" />
+    <ClInclude Include="engine\user-engine\user-search_common.h" />
     <ClInclude Include="evaluate.h" />
     <ClInclude Include="eval\evaluate_io.h" />
     <ClInclude Include="eval\evaluate_common.h" />
@@ -791,7 +796,10 @@
     <ClCompile Include="engine\mate-engine\mate-search.cpp" />
     <ClCompile Include="engine\user-engine\dnn_converter.cpp" />
     <ClCompile Include="engine\user-engine\dnn_converter_py.cpp" />
+    <ClCompile Include="engine\user-engine\dnn_thread.cpp" />
+    <ClCompile Include="engine\user-engine\mate-search_for_mcts.cpp" />
     <ClCompile Include="engine\user-engine\user-search.cpp" />
+    <ClCompile Include="engine\user-engine\user-search_common.cpp" />
     <ClCompile Include="engine\user-engine\user-search_mcts.cpp" />
     <ClCompile Include="engine\user-engine\user-search_policy.cpp" />
     <ClCompile Include="eval\evaluate_bona_piece.cpp" />
