@@ -1,16 +1,10 @@
 ﻿#pragma once
-#include <Windows.h>
-#include <string>
-#include <locale>
-#include <codecvt>
+#include <mutex>
 
 class ipqueue_meta
 {
 public:
-	// batch_sizeは初期化値の共有用
-	int size, batch_size, read_end, read_begin, write_end, write_begin;
-	int watcher_count;// CreateFileMappingで零初期化されるはず https://msdn.microsoft.com/ja-jp/library/windows/desktop/aa366537(v=vs.85).aspx
-	// The initial contents of the pages in a file mapping object backed by the operating system paging file are 0 (zero).
+	int size, read_end, read_begin, write_end, write_begin;
 	bool writing, reading;
 
 	void init(int size)
@@ -76,23 +70,6 @@ public:
 	}
 };
 
-class lock_mutex
-{
-	HANDLE hMutex;
-
-public:
-	lock_mutex(HANDLE hMutex)
-	{
-		this->hMutex = hMutex;
-		WaitForSingleObject(hMutex, INFINITE);
-	}
-
-	~lock_mutex()
-	{
-		ReleaseMutex(hMutex);
-	}
-};
-
 template<typename T>
 class ipqueue_item
 {
@@ -104,12 +81,9 @@ public:
 template<typename T>
 class ipqueue
 {
-	HANDLE hMapFileMeta;
-	HANDLE hMapFileData;
-	void* hMapBuf;
+	std::mutex _mut;
 	void* dataBuf;
 	ipqueue_meta* metaBuf;
-	HANDLE hMutex;
 	size_t _size;
 	size_t _batch_size;
 	size_t item_size;
@@ -117,60 +91,14 @@ class ipqueue
 public:
 	bool ok;
 
-	ipqueue(size_t size, size_t batch_size, const std::string& name, bool initialize)
+	ipqueue(size_t size, size_t batch_size): _size(size), _batch_size(batch_size)
 	{
 		ok = false;
-		// utf-8で名前を受け取り、utf-16に変換
-		std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> cv;
-		std::wstring namew = cv.from_bytes(name);
-		std::wstring map_name_meta = namew + L"_map_meta";
-		std::wstring map_name_data = namew + L"_map_data";
-		std::wstring mutex_name = namew + L"_mutex";
-		hMapFileMeta = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(ipqueue_meta), map_name_meta.c_str());
-		if (hMapFileMeta ==NULL)
-		{
-			return;
-		}
-		metaBuf = reinterpret_cast<ipqueue_meta*>(MapViewOfFile(hMapFileMeta, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(ipqueue_meta)));
-		if (metaBuf == NULL)
-		{
-			return;
-		}
-		if (initialize)
-		{
-			hMutex = CreateMutex(NULL, FALSE, mutex_name.c_str());
-			if (hMutex == NULL)
-			{
-				return;
-			}
-			metaBuf->init(size);
-			metaBuf->batch_size = batch_size;
-			this->_size = size;
-			this->_batch_size = batch_size;
-		}
-		else
-		{
-			hMutex = OpenMutex(MUTEX_ALL_ACCESS, FALSE, mutex_name.c_str());
-			if (hMutex == NULL)
-			{
-				return;
-			}
-			this->_size = metaBuf->size;
-			this->_batch_size = metaBuf->batch_size;
-		}
-
+		metaBuf = new ipqueue_meta();
+		metaBuf->init(_size);
 		item_size = sizeof(ipqueue_item<T>) + sizeof(T) * (_batch_size - 1);
 		size_t map_size = _size * item_size;
-		hMapFileData = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, map_size, map_name_data.c_str());
-		if (hMapFileData == NULL)
-		{
-			return;
-		}
-		dataBuf = reinterpret_cast<ipqueue_item<T>*>(MapViewOfFile(hMapFileData, FILE_MAP_ALL_ACCESS, 0, 0, map_size));
-		if (dataBuf == NULL)
-		{
-			return;
-		}
+		dataBuf = new char[map_size]();
 
 		ok = true;
 	}
@@ -179,17 +107,14 @@ public:
 	{
 		if (ok)
 		{
-			UnmapViewOfFile(dataBuf);
-			CloseHandle(hMapFileData);
-			UnmapViewOfFile(metaBuf);
-			CloseHandle(hMapFileMeta);
-			CloseHandle(hMutex);
+			delete[] metaBuf;
+			delete[] dataBuf;
 		}
 	}
 
 	ipqueue_item<T>* begin_read()
 	{
-		lock_mutex m(hMutex);
+		std::lock_guard<std::mutex> lock(_mut);
 		int ret = metaBuf->begin_read();
 		if (ret < 0)
 		{
@@ -200,13 +125,13 @@ public:
 
 	void end_read()
 	{
-		lock_mutex m(hMutex);
+		std::lock_guard<std::mutex> lock(_mut);
 		metaBuf->end_read();
 	}
 
 	ipqueue_item<T>* begin_write()
 	{
-		lock_mutex m(hMutex);
+		std::lock_guard<std::mutex> lock(_mut);
 		int ret = metaBuf->begin_write();
 		if (ret < 0)
 		{
@@ -217,29 +142,17 @@ public:
 
 	void end_write()
 	{
-		lock_mutex m(hMutex);
+		std::lock_guard<std::mutex> lock(_mut);
 		metaBuf->end_write();
 	}
 
-	size_t size()
+	size_t size() const
 	{
 		return this->_size;
 	}
 
-	size_t batch_size()
+	size_t batch_size() const
 	{
 		return this->_batch_size;
-	}
-
-	int increment_watcher_count()
-	{
-		lock_mutex m(hMutex);
-		return ++(metaBuf->watcher_count);
-	}
-
-	int get_watcher_count()
-	{
-		lock_mutex m(hMutex);
-		return metaBuf->watcher_count;
 	}
 };

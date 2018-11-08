@@ -10,20 +10,14 @@ CNTK::DeviceDescriptor device = CNTK::DeviceDescriptor::CPUDevice();
 CNTK::FunctionPtr modelFunc;
 shared_ptr<DNNConverter> cvt;
 
-static ipqueue<dnn_eval_obj> *dt_eval_queue;
-static ipqueue<dnn_result_obj> *dt_result_queue;
-
 void dnn_thread_main()
 {
-	dt_eval_queue = new ipqueue<dnn_eval_obj>(0, 0, "neneshogi_eval", false);
-	dt_result_queue = new ipqueue<dnn_result_obj>(0, 0, "neneshogi_result", false);
-
 	sync_cout << "info string from dnn thread" << sync_endl;
 
 	auto input_shape = cvt->board_shape();
 	int sample_size = accumulate(input_shape.begin(), input_shape.end(), 1, std::multiplies<int>());
 	
-	sync_cout << "info string dnn batch size " << dt_eval_queue->batch_size() << sync_endl;
+	sync_cout << "info string dnn batch size " << eval_queue->batch_size() << sync_endl;
 
 	// Get input variable. The model has only one single input.
 	CNTK::Variable inputVar = modelFunc->Arguments()[0];
@@ -39,11 +33,11 @@ void dnn_thread_main()
 	{
 		// TODO read-eval-write
 		ipqueue_item<dnn_eval_obj> *eval_objs;
-		while (!(eval_objs = dt_eval_queue->begin_read()))
+		while (!(eval_objs = eval_queue->begin_read()))
 		{
 			std::this_thread::sleep_for(std::chrono::microseconds(1));
 		}
-		vector<float> inputData(sample_size * dt_eval_queue->batch_size());
+		vector<float> inputData(sample_size * eval_queue->batch_size());
 		// eval_objsをDNN評価
 		for (int i = 0; i < eval_objs->count; i++)
 		{
@@ -71,7 +65,7 @@ void dnn_thread_main()
 		valueVal->CopyVariableValueTo(valueVar, valueData);
 		
 		ipqueue_item<dnn_result_obj> *result_objs;
-		while (!(result_objs = dt_result_queue->begin_write()))
+		while (!(result_objs = result_queue->begin_write()))
 		{
 			std::this_thread::sleep_for(std::chrono::microseconds(1));
 		}
@@ -111,9 +105,9 @@ void dnn_thread_main()
 		}
 		result_objs->count = eval_objs->count;
 
-		// dt_reqult_queueに結果を書く
-		dt_eval_queue->end_read();
-		dt_result_queue->end_write();
+		// reqult_queueに結果を書く
+		eval_queue->end_read();
+		result_queue->end_write();
 	}
 
 }

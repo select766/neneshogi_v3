@@ -14,8 +14,8 @@
 
 #define MAX_UCT_CHILDREN 16//UCTノードの子ノード数最大
 static int obsolete_removed_count = 0;
-static ipqueue<dnn_eval_obj> *eval_queue;
-static ipqueue<dnn_result_obj> *result_queue;
+ipqueue<dnn_eval_obj> *eval_queue;
+ipqueue<dnn_result_obj> *result_queue;
 
 class TreeConfig
 {
@@ -425,8 +425,8 @@ void  Search::clear()
 		cvt = shared_ptr<DNNConverter>(new DNNConverter(format_board, format_move));
 
 		// スレッド間キュー初期化
-		eval_queue = new ipqueue<dnn_eval_obj>(block_queue_length, batch_size, "neneshogi_eval", true);
-		result_queue = new ipqueue<dnn_result_obj>(block_queue_length, batch_size, "neneshogi_result", true);
+		eval_queue = new ipqueue<dnn_eval_obj>(block_queue_length, batch_size);
+		result_queue = new ipqueue<dnn_result_obj>(block_queue_length, batch_size);
 
 		// 評価スレッドを立てる
 		dnn_thread_thread = new std::thread(dnn_thread_main);
