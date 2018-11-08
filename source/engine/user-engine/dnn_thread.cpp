@@ -6,13 +6,15 @@
 #include "ipqueue.h"
 
 #ifdef USER_ENGINE_MCTS
-CNTK::DeviceDescriptor device = CNTK::DeviceDescriptor::CPUDevice();
-CNTK::FunctionPtr modelFunc;
+vector<DeviceModel> device_models;
 shared_ptr<DNNConverter> cvt;
 
-void dnn_thread_main()
+void dnn_thread_main(int worker_idx)
 {
-	sync_cout << "info string from dnn thread" << sync_endl;
+	sync_cout << "info string from dnn thread " << worker_idx << sync_endl;
+	auto &device_model = device_models[worker_idx];
+	auto &device = device_model.device;
+	auto &modelFunc = device_model.modelFunc;
 
 	auto input_shape = cvt->board_shape();
 	int sample_size = accumulate(input_shape.begin(), input_shape.end(), 1, std::multiplies<int>());
@@ -31,7 +33,6 @@ void dnn_thread_main()
 	int ctr = 0;
 	while (true)
 	{
-		// TODO read-eval-write
 		ipqueue_item<dnn_eval_obj> *eval_objs;
 		while (!(eval_objs = eval_queue->begin_read()))
 		{

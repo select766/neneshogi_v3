@@ -289,7 +289,7 @@ static int block_queue_length = 2;
 static int mate_search_leaf_count = 0;//末端ノードの詰み探索で詰みと判定された回数
 static vector<Move> root_mate_pv;
 static atomic<bool> root_mate_found;
-static std::thread *dnn_thread_thread = nullptr;
+static vector<std::thread*> dnn_threads;
 
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
 void user_test(Position& pos_, istringstream& is)
@@ -332,7 +332,7 @@ void user_test(Position& pos_, istringstream& is)
 // USI::init()のなかからコールバックされる。
 void USI::extra_option(USI::OptionsMap & o)
 {
-	o["GPU"] << Option(-1, -1, 16);//使用するGPU番号(-1==CPU)
+	o["GPU"] << Option("-1");//使用するGPU番号(-1==CPU)、カンマ区切りで複数指定可能
 	o["format_board"] << Option(0, 0, 16);//DNNのboard表現形式
 	o["format_move"] << Option(0, 0, 16);//DNNのmove表現形式
 	o["PvInterval"] << Option(300, 0, 100000);//PV出力する間隔[ms]
@@ -345,9 +345,6 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["virtual_loss"] << Option(1, 0, 100);
 	o["clear_table"] << Option(false);
 	o["batch_size"] << Option(16, 1, 65536);
-	o["process_per_gpu"] << Option(1, 1, 10);
-	o["gpu_max"] << Option(0, -1, 16);
-	o["gpu_min"] << Option(0, -1, 16);
 	o["block_queue_length"] << Option(2, 1, 64);
 }
 
@@ -404,13 +401,6 @@ void  Search::clear()
 
 	if (!dnn_initialized)
 	{
-		// 評価デバイス選択
-		int gpu_id = (int)Options["GPU"];
-		if (gpu_id >= 0)
-		{
-			device = CNTK::DeviceDescriptor::GPUDevice((unsigned int)gpu_id);
-		}
-
 		// モデルのロード
 		// 本来はファイル名からフォーマットを推論したい
 		// 将棋所からは日本語WindowsだとオプションがCP932で来る。mbstowcsにそれを認識させ、日本語ファイル名を正しく変換
@@ -421,7 +411,17 @@ void  Search::clear()
 		wchar_t evaldir_w[1024];
 		mbstowcs(evaldir_w, evaldir.c_str(), sizeof(model_path) / sizeof(model_path[0]) - 1); // C4996
 		swprintf(model_path, sizeof(model_path) / sizeof(model_path[0]), L"%s/nene_%d_%d.cmf", evaldir_w, format_board, format_move);
-		modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
+		// デバイス数だけモデルをロードし各デバイスに割り当てる
+		stringstream ss(Options["GPU"]);//カンマ区切りでGPU番号を並べる
+		string item;
+		while (getline(ss, item, ',')) {
+			if (!item.empty()) {
+				int gpu_id = stoi(item);
+				CNTK::DeviceDescriptor device = gpu_id >= 0 ? CNTK::DeviceDescriptor::GPUDevice((unsigned int)gpu_id) : CNTK::DeviceDescriptor::CPUDevice();
+				CNTK::FunctionPtr modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
+				device_models.push_back(DeviceModel(device, modelFunc));
+			}
+		}
 		cvt = shared_ptr<DNNConverter>(new DNNConverter(format_board, format_move));
 
 		// スレッド間キュー初期化
@@ -429,7 +429,10 @@ void  Search::clear()
 		result_queue = new ipqueue<dnn_result_obj>(block_queue_length, batch_size);
 
 		// 評価スレッドを立てる
-		dnn_thread_thread = new std::thread(dnn_thread_main);
+		for (int i = 0; i < device_models.size(); i++)
+		{
+			dnn_threads.push_back(new std::thread(dnn_thread_main, i));
+		}
 		dnn_initialized = true;
 	}
 
