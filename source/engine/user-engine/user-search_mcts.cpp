@@ -418,15 +418,16 @@ void  Search::clear()
 			if (!item.empty()) {
 				int gpu_id = stoi(item);
 				CNTK::DeviceDescriptor device = gpu_id >= 0 ? CNTK::DeviceDescriptor::GPUDevice((unsigned int)gpu_id) : CNTK::DeviceDescriptor::CPUDevice();
-				CNTK::FunctionPtr modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
-				device_models.push_back(DeviceModel(device, modelFunc));
+				// CNTK::FunctionPtr modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
+				//device_models.push_back(DeviceModel(device, modelFunc));
+				device_models.push_back(DeviceModel(device));
 			}
 		}
 		cvt = shared_ptr<DNNConverter>(new DNNConverter(format_board, format_move));
 
 		// スレッド間キュー初期化
-		eval_queue = new ipqueue<dnn_eval_obj>(block_queue_length, batch_size);
-		result_queue = new ipqueue<dnn_result_obj>(block_queue_length, batch_size);
+		eval_queue = new ipqueue<dnn_eval_obj>(4, batch_size);
+		result_queue = new ipqueue<dnn_result_obj>(4, batch_size);
 
 		// 評価スレッドを立てる
 		for (int i = 0; i < device_models.size(); i++)
@@ -462,15 +463,19 @@ bool dnn_write_eval_obj(dnn_eval_obj *eval_obj, const Position &pos)
 
 	int m_i = 0;
 	bool not_mate = false;
+	sync_cout << "info string eval_obj ptr " << (unsigned long long)eval_obj << sync_endl;
+	sync_cout << "info string mis ";
 	for (auto m : MoveList<LEGAL>(pos))
 	{
 		dnn_move_index dmi;
 		dmi.move = (uint16_t)m.move;
 		dmi.index = (uint16_t)cvt->get_move_index(pos, m.move);
+		std::cout << m.move << "=" << dmi.index << ",";
 		eval_obj->move_indices[m_i] = dmi;
 		m_i++;
 		not_mate = true;
 	}
+	std::cout << sync_endl;
 	eval_obj->n_moves = m_i;
 	return not_mate;
 }
@@ -558,13 +563,16 @@ void update_on_dnn_result(dnn_result_obj *result_obj)
 		std::sort(&result_obj->move_probs[0], &result_obj->move_probs[result_obj->n_moves]);
 		n_moves_use = MAX_UCT_CHILDREN;
 	}
+	sync_cout << "info string moveprobs ";
 	for (int i = 0; i < n_moves_use; i++)
 	{
 		dnn_move_prob &dmp = result_obj->move_probs[i];
 		leaf_node.move_list[i] = (Move)dmp.move;
 		leaf_node.value_p[i] = dmp.prob_scaled / 65535.0F;
+		std::cout << leaf_node.move_list[i] << "=" << leaf_node.value_p[i] << ",";
 		// n, w, qは0初期化されている
 	}
+	std::cout << sync_endl;
 	leaf_node.n_children = n_moves_use;
 	float score = result_obj->static_value / 32000.0F * tree_config.value_scale; // [-1.0, 1.0]
 	leaf_node.score = score;
