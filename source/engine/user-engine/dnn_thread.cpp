@@ -11,11 +11,10 @@ shared_ptr<DNNConverter> cvt;
 void dnn_thread_main(int worker_idx)
 {
 	sync_cout << "info string from dnn thread " << worker_idx << sync_endl;
-	// auto &device_model = device_models[worker_idx];
-	auto &device = CNTK::DeviceDescriptor::GPUDevice(0);// device_model.device;
-	// auto &modelFunc = device_model.modelFunc;
-	auto modelFunc = CNTK::Function::Load(L"D:\\dev\\shogi\\neneshogi\\data\\model\\train_147000000\\nene_0_1.cmf", device, CNTK::ModelFormat::CNTKv2);
-
+	auto &device_model = device_models[worker_idx];
+	auto &device = device_model.device;
+	auto &modelFunc = device_model.modelFunc;
+	
 	auto input_shape = cvt->board_shape();
 	int sample_size = accumulate(input_shape.begin(), input_shape.end(), 1, std::multiplies<int>());
 	
@@ -34,36 +33,28 @@ void dnn_thread_main(int worker_idx)
 	while (true)
 	{
 		ipqueue_item<dnn_eval_obj> *eval_objs;
-		sync_cout << "info string dnn 1" << sync_endl;
 		while (!(eval_objs = eval_queue->begin_read()))
 		{
 			std::this_thread::sleep_for(std::chrono::microseconds(1));
 		}
-		sync_cout << "info string dnn 2" << sync_endl;
 		vector<float> inputData(sample_size * eval_queue->batch_size());
 		// eval_objsをDNN評価
 		for (int i = 0; i < eval_objs->count; i++)
 		{
 			memcpy(&inputData[sample_size*i], eval_objs->elements[i].input_array, sample_size * sizeof(float));
 		}
-
-		sync_cout << "info string dnn 3" << sync_endl;
-
+		
 		// Create input value and input data map
 		CNTK::ValuePtr inputVal = CNTK::Value::CreateBatch(inputVar.Shape(), inputData, device);
-		sync_cout << "info string dnn 3.5" << sync_endl;
 		std::unordered_map<CNTK::Variable, CNTK::ValuePtr> inputDataMap = { { inputVar, inputVal } };
 
-		sync_cout << "info string dnn 3.7" << sync_endl;
 		// Create output data map. Using null as Value to indicate using system allocated memory.
 		// Alternatively, create a Value object and add it to the data map.
 		std::unordered_map<CNTK::Variable, CNTK::ValuePtr> outputDataMap = { { policyVar, nullptr }, { valueVar, nullptr } };
 
-		sync_cout << "info string dnn 4" << sync_endl;
 		// Start evaluation on the device
 		modelFunc->Evaluate(inputDataMap, outputDataMap, device);
 
-		sync_cout << "info string dnn 5" << sync_endl;
 		// Get evaluate result as dense output
 		CNTK::ValuePtr policyVal = outputDataMap[policyVar];
 		std::vector<std::vector<float>> policyData;
@@ -72,17 +63,12 @@ void dnn_thread_main(int worker_idx)
 		std::vector<std::vector<float>> valueData;
 		valueVal->CopyVariableValueTo(valueVar, valueData);
 
-		sync_cout << "info string psize " << policyData.size() << "," << policyData[0].size() << sync_endl;
-		sync_cout << "info string vsize " << valueData.size() << "," << valueData[0].size() << sync_endl;
-
-		sync_cout << "info string dnn 6" << sync_endl;
 		ipqueue_item<dnn_result_obj> *result_objs;
 		while (!(result_objs = result_queue->begin_write()))
 		{
 			std::this_thread::sleep_for(std::chrono::microseconds(1));
 		}
 
-		sync_cout << "info string dnn 7" << sync_endl;
 		for (int i = 0; i < eval_objs->count; i++)
 		{
 			dnn_eval_obj &eval_obj = eval_objs->elements[i];
@@ -90,19 +76,16 @@ void dnn_thread_main(int worker_idx)
 			result_obj.static_value = (int16_t)((valueData[i][0] - 0.5) * 32000);//sigmoidで0~1で出てくる？
 
 			// 合法手内でsoftmax確率を取る
-			sync_cout << "info string vals[" << eval_obj.n_moves << "] ";
 			float raw_values[MAX_MOVES];
 			float raw_max = -10000.0F;
 			for (int j = 0; j < eval_obj.n_moves; j++)
 			{
 				raw_values[j] = policyData[i][eval_obj.move_indices[j].index];
-				std::cout << eval_obj.move_indices[j].index << "=" << raw_values[j] << ",";
 				if (raw_max < raw_values[j])
 				{
 					raw_max = raw_values[j];
 				}
 			}
-			std::cout << sync_endl;
 			float exps[MAX_MOVES];
 			float exp_sum = 0.0F;
 			for (int j = 0; j < eval_obj.n_moves; j++)
@@ -111,24 +94,19 @@ void dnn_thread_main(int worker_idx)
 				exps[j] = e;
 				exp_sum += e;
 			}
-			sync_cout << "info string probs[" << eval_obj.n_moves << "] ";
 			for (int j = 0; j < eval_obj.n_moves; j++)
 			{
 				result_obj.move_probs[j].move = eval_obj.move_indices[j].move;
 				result_obj.move_probs[j].prob_scaled = (uint16_t)((exps[j] / exp_sum) * 65535);
-				std::cout << (Move)result_obj.move_probs[j].move << "=" << result_obj.move_probs[j].prob_scaled << "=" << (exps[j] / exp_sum) << ",";
 			}
-			std::cout << sync_endl;
 			result_obj.index = eval_obj.index;
 			result_obj.n_moves = eval_obj.n_moves;
 		}
 		result_objs->count = eval_objs->count;
 
-		sync_cout << "info string dnn 8" << sync_endl;
 		// reqult_queueに結果を書く
 		eval_queue->end_read();
 		result_queue->end_write();
-		sync_cout << "info string dnn 9" << sync_endl;
 	}
 
 }

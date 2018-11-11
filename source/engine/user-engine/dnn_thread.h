@@ -11,23 +11,13 @@
 extern ipqueue<dnn_eval_obj> *eval_queue;
 extern ipqueue<dnn_result_obj> *result_queue;
 
-//class DeviceModel
-//{
-//public:
-//	CNTK::DeviceDescriptor device;
-//	CNTK::FunctionPtr modelFunc;
-//	DeviceModel(CNTK::DeviceDescriptor _device, CNTK::FunctionPtr _modelFunc) :
-//		device(_device), modelFunc(_modelFunc)
-//	{
-//
-//	}
-//};
 class DeviceModel
 {
 public:
 	CNTK::DeviceDescriptor device;
-	DeviceModel(CNTK::DeviceDescriptor _device) :
-		device(_device)
+	CNTK::FunctionPtr modelFunc;
+	DeviceModel(CNTK::DeviceDescriptor _device, CNTK::FunctionPtr _modelFunc) :
+		device(_device), modelFunc(_modelFunc)
 	{
 
 	}

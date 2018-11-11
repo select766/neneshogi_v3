@@ -412,25 +412,24 @@ void  Search::clear()
 		mbstowcs(evaldir_w, evaldir.c_str(), sizeof(model_path) / sizeof(model_path[0]) - 1); // C4996
 		swprintf(model_path, sizeof(model_path) / sizeof(model_path[0]), L"%s/nene_%d_%d.cmf", evaldir_w, format_board, format_move);
 		// デバイス数だけモデルをロードし各デバイスに割り当てる
-		//stringstream ss(Options["GPU"]);//カンマ区切りでGPU番号を並べる
-		//string item;
-		//while (getline(ss, item, ',')) {
-		//	if (!item.empty()) {
-		//		int gpu_id = stoi(item);
-		//		CNTK::DeviceDescriptor device = gpu_id >= 0 ? CNTK::DeviceDescriptor::GPUDevice((unsigned int)gpu_id) : CNTK::DeviceDescriptor::CPUDevice();
-		//		// CNTK::FunctionPtr modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
-		//		//device_models.push_back(DeviceModel(device, modelFunc));
-		//		device_models.push_back(DeviceModel(device));
-		//	}
-		//}
+		stringstream ss(Options["GPU"]);//カンマ区切りでGPU番号を並べる
+		string item;
+		while (getline(ss, item, ',')) {
+			if (!item.empty()) {
+				int gpu_id = stoi(item);
+				CNTK::DeviceDescriptor device = gpu_id >= 0 ? CNTK::DeviceDescriptor::GPUDevice((unsigned int)gpu_id) : CNTK::DeviceDescriptor::CPUDevice();
+				CNTK::FunctionPtr modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
+				device_models.push_back(DeviceModel(device, modelFunc));
+			}
+		}
 		cvt = shared_ptr<DNNConverter>(new DNNConverter(format_board, format_move));
 
 		// スレッド間キュー初期化
-		eval_queue = new ipqueue<dnn_eval_obj>(4, batch_size);
-		result_queue = new ipqueue<dnn_result_obj>(4, batch_size);
+		eval_queue = new ipqueue<dnn_eval_obj>(block_queue_length, batch_size);
+		result_queue = new ipqueue<dnn_result_obj>(block_queue_length, batch_size);
 
 		// 評価スレッドを立てる
-		for (int i = 0; i < 1; i++)
+		for (int i = 0; i < device_models.size(); i++)
 		{
 			dnn_threads.push_back(new std::thread(dnn_thread_main, i));
 		}
@@ -439,9 +438,9 @@ void  Search::clear()
 
 	hash_init_thread.join();
 
-//#ifdef _DEBUG
+#ifdef _DEBUG
 	std::this_thread::sleep_for(std::chrono::seconds(5));
-//#endif
+#endif
 }
 
 void flush_queue()
@@ -463,19 +462,15 @@ bool dnn_write_eval_obj(dnn_eval_obj *eval_obj, const Position &pos)
 
 	int m_i = 0;
 	bool not_mate = false;
-	sync_cout << "info string eval_obj ptr " << (unsigned long long)eval_obj << sync_endl;
-	sync_cout << "info string mis ";
 	for (auto m : MoveList<LEGAL>(pos))
 	{
 		dnn_move_index dmi;
 		dmi.move = (uint16_t)m.move;
 		dmi.index = (uint16_t)cvt->get_move_index(pos, m.move);
-		std::cout << m.move << "=" << dmi.index << ",";
 		eval_obj->move_indices[m_i] = dmi;
 		m_i++;
 		not_mate = true;
 	}
-	std::cout << sync_endl;
 	eval_obj->n_moves = m_i;
 	return not_mate;
 }
@@ -502,7 +497,6 @@ bool enqueue_pos(const Position &pos, dnn_table_index &path, float &score, bool 
 		{
 			std::this_thread::sleep_for(std::chrono::microseconds(1));
 		}
-		sync_cout << "info string new eval obj" << (unsigned long long)eval_objs << sync_endl;
 		eval_queue_batch_index = 0;
 	}
 	dnn_eval_obj *eval_obj = &eval_objs->elements[eval_queue_batch_index];
@@ -564,16 +558,13 @@ void update_on_dnn_result(dnn_result_obj *result_obj)
 		std::sort(&result_obj->move_probs[0], &result_obj->move_probs[result_obj->n_moves]);
 		n_moves_use = MAX_UCT_CHILDREN;
 	}
-	sync_cout << "info string moveprobs ";
 	for (int i = 0; i < n_moves_use; i++)
 	{
 		dnn_move_prob &dmp = result_obj->move_probs[i];
 		leaf_node.move_list[i] = (Move)dmp.move;
 		leaf_node.value_p[i] = dmp.prob_scaled / 65535.0F;
-		std::cout << leaf_node.move_list[i] << "=" << leaf_node.value_p[i] << ",";
 		// n, w, qは0初期化されている
 	}
-	std::cout << sync_endl;
 	leaf_node.n_children = n_moves_use;
 	float score = result_obj->static_value / 32000.0F * tree_config.value_scale; // [-1.0, 1.0]
 	leaf_node.score = score;
@@ -967,12 +958,6 @@ std::atomic_bool in_search_time;
 // そのあとslaveスレッドを終了させ、ベストな指し手を返すこと。
 void MainThread::think()
 {
-	sync_cout << "info string think ";
-	for (auto m : MoveList<LEGAL>(rootPos))
-	{
-		std::cout << m.move << ",";
-	}
-	std::cout << "END" << sync_endl;
 	Time.init(Search::Limits, rootPos.side_to_move(), rootPos.game_ply());
 	long long next_pv_time = 0;
 	in_search_time = true;
