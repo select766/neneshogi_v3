@@ -671,11 +671,17 @@ int select_edge(UctNode &node)
 	float n_sum_sqrt = sqrt((float)node.value_n_sum) + 0.001F;//完全に0だと最初の1手が事前確率に沿わなくなる
 	int best_index = 0;
 	float best_value = -100.0F;
+	float w_sum = 0.0F;
 	for (size_t i = 0; i < node.n_children; i++)
 	{
-		float value_n = (float)node.value_n[i];
+		w_sum += node.value_w[i];
+	}
+	float mean_w = w_sum / node.value_n_sum;//1度も探索してないノードの評価値替わり
+	for (size_t i = 0; i < node.n_children; i++)
+	{
+		int value_n = node.value_n[i];
 		float value_u = node.value_p[i] / (value_n + 1) * tree_config.c_puct * n_sum_sqrt;
-		float value_q = node.value_w[i] / (value_n + 1e-8F);//0除算回避
+		float value_q = value_n > 0 ? node.value_w[i] / value_n : mean_w;
 		float value_sum = value_q + value_u;
 		if (value_sum > best_value)
 		{
