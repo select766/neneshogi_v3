@@ -1,4 +1,6 @@
-﻿#include "../../extra/all.h"
+﻿#ifdef USER_ENGINE_MCTS
+
+#include "../../extra/all.h"
 #include <thread>
 #include <chrono>
 #include <numeric>
@@ -8,8 +10,6 @@
 #include "dnn_converter.h"
 #include "dnn_eval_obj.h"
 #include "dnn_thread.h"
-
-#ifdef USER_ENGINE_MCTS
 
 #define MAX_UCT_CHILDREN 16//UCTノードの子ノード数最大
 static int obsolete_removed_count = 0;

@@ -1,10 +1,11 @@
 ﻿// CNTKでDNN評価を行うスレッド
 
+
+#ifdef USER_ENGINE_MCTS
 #include "../../extra/all.h"
 #include "dnn_eval_obj.h"
 #include "dnn_thread.h"
 
-#ifdef USER_ENGINE_MCTS
 vector<DeviceModel> device_models;
 shared_ptr<DNNConverter> cvt;
 

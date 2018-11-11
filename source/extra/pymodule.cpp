@@ -19,4 +19,24 @@ PYBIND11_MODULE(neneshogi_cpp, m) {
 		.def("reverse_move_index", &DNNConverterPy::reverse_move_index)
 		;
 }
+
+// dummy
+void user_test(Position& pos_, istringstream& is)
+{
+}
+void USI::extra_option(USI::OptionsMap & o)
+{
+}
+void Search::init()
+{
+}
+void Search::clear()
+{
+}
+void MainThread::think()
+{
+}
+void Thread::search()
+{
+}
 #endif
