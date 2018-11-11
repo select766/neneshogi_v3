@@ -372,7 +372,7 @@ int DNNConverter::get_move_index_1(const Position & pos, Move move) const
 			ch += 10;
 		}
 
-		return ch * (int)SQ_NB + _move_from;
+		return ch * (int)SQ_NB + _move_to;
 	}
 }
 
