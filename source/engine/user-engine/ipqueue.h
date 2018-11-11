@@ -83,7 +83,7 @@ class ipqueue
 {
 	std::mutex _mut;
 	void* dataBuf;
-	ipqueue_meta* metaBuf;
+	ipqueue_meta metaBuf;
 	size_t _size;
 	size_t _batch_size;
 	size_t item_size;
@@ -94,8 +94,7 @@ public:
 	ipqueue(size_t size, size_t batch_size): _size(size), _batch_size(batch_size)
 	{
 		ok = false;
-		metaBuf = new ipqueue_meta();
-		metaBuf->init(_size);
+		metaBuf.init(_size);
 		item_size = sizeof(ipqueue_item<T>) + sizeof(T) * (_batch_size - 1);
 		size_t map_size = _size * item_size;
 		dataBuf = new char[map_size]();
@@ -107,7 +106,6 @@ public:
 	{
 		if (ok)
 		{
-			delete[] metaBuf;
 			delete[] dataBuf;
 		}
 	}
@@ -115,7 +113,7 @@ public:
 	ipqueue_item<T>* begin_read()
 	{
 		std::lock_guard<std::mutex> lock(_mut);
-		int ret = metaBuf->begin_read();
+		int ret = metaBuf.begin_read();
 		if (ret < 0)
 		{
 			return nullptr;
@@ -126,13 +124,13 @@ public:
 	void end_read()
 	{
 		std::lock_guard<std::mutex> lock(_mut);
-		metaBuf->end_read();
+		metaBuf.end_read();
 	}
 
 	ipqueue_item<T>* begin_write()
 	{
 		std::lock_guard<std::mutex> lock(_mut);
-		int ret = metaBuf->begin_write();
+		int ret = metaBuf.begin_write();
 		if (ret < 0)
 		{
 			return nullptr;
@@ -143,7 +141,7 @@ public:
 	void end_write()
 	{
 		std::lock_guard<std::mutex> lock(_mut);
-		metaBuf->end_write();
+		metaBuf.end_write();
 	}
 
 	size_t size() const

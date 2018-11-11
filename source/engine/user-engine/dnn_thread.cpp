@@ -1,9 +1,8 @@
 ﻿// CNTKでDNN評価を行うスレッド
 
 #include "../../extra/all.h"
-#include "dnn_thread.h"
 #include "dnn_eval_obj.h"
-#include "ipqueue.h"
+#include "dnn_thread.h"
 
 #ifdef USER_ENGINE_MCTS
 vector<DeviceModel> device_models;
@@ -12,8 +11,8 @@ shared_ptr<DNNConverter> cvt;
 void dnn_thread_main(int worker_idx)
 {
 	sync_cout << "info string from dnn thread " << worker_idx << sync_endl;
-	auto &device_model = device_models[worker_idx];
-	auto &device = CNTK::DeviceDescriptor::CPUDevice();// device_model.device;
+	// auto &device_model = device_models[worker_idx];
+	auto &device = CNTK::DeviceDescriptor::GPUDevice(0);// device_model.device;
 	// auto &modelFunc = device_model.modelFunc;
 	auto modelFunc = CNTK::Function::Load(L"D:\\dev\\shogi\\neneshogi\\data\\model\\train_147000000\\nene_0_1.cmf", device, CNTK::ModelFormat::CNTKv2);
 
@@ -112,14 +111,14 @@ void dnn_thread_main(int worker_idx)
 				exps[j] = e;
 				exp_sum += e;
 			}
-			//sync_cout << "info string probs[" << eval_obj.n_moves << "] ";
+			sync_cout << "info string probs[" << eval_obj.n_moves << "] ";
 			for (int j = 0; j < eval_obj.n_moves; j++)
 			{
 				result_obj.move_probs[j].move = eval_obj.move_indices[j].move;
 				result_obj.move_probs[j].prob_scaled = (uint16_t)((exps[j] / exp_sum) * 65535);
-				//std::cout << (Move)result_obj.move_probs[j].move << "=" << result_obj.move_probs[j].prob_scaled << ",";
+				std::cout << (Move)result_obj.move_probs[j].move << "=" << result_obj.move_probs[j].prob_scaled << "=" << (exps[j] / exp_sum) << ",";
 			}
-			//std::cout << sync_endl;
+			std::cout << sync_endl;
 			result_obj.index = eval_obj.index;
 			result_obj.n_moves = eval_obj.n_moves;
 		}
@@ -133,4 +132,5 @@ void dnn_thread_main(int worker_idx)
 	}
 
 }
+
 #endif

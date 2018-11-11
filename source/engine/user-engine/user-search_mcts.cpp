@@ -6,7 +6,6 @@
 #include "CNTKLibrary.h"
 #include "mate-search_for_mcts.h"
 #include "dnn_converter.h"
-#include "ipqueue.h"
 #include "dnn_eval_obj.h"
 #include "dnn_thread.h"
 
@@ -14,8 +13,8 @@
 
 #define MAX_UCT_CHILDREN 16//UCTノードの子ノード数最大
 static int obsolete_removed_count = 0;
-ipqueue<dnn_eval_obj> *eval_queue;
-ipqueue<dnn_result_obj> *result_queue;
+ipqueue<dnn_eval_obj> *eval_queue = nullptr;
+ipqueue<dnn_result_obj> *result_queue = nullptr;
 
 class TreeConfig
 {
@@ -78,8 +77,9 @@ namespace MCTSAsync
 		{
 			uct_hash_limit = (int)(uct_hash_size * 0.9);
 			uct_hash_mask = (unsigned int)uct_hash_size - 1;
-			entries = new NodeHashEntry[uct_hash_size]();
-			nodes = new UctNode[uct_hash_size]();
+			entries = new NodeHashEntry[uct_hash_size];
+			nodes = new UctNode[uct_hash_size];
+			clear();
 		}
 
 		void clear()
@@ -412,17 +412,17 @@ void  Search::clear()
 		mbstowcs(evaldir_w, evaldir.c_str(), sizeof(model_path) / sizeof(model_path[0]) - 1); // C4996
 		swprintf(model_path, sizeof(model_path) / sizeof(model_path[0]), L"%s/nene_%d_%d.cmf", evaldir_w, format_board, format_move);
 		// デバイス数だけモデルをロードし各デバイスに割り当てる
-		stringstream ss(Options["GPU"]);//カンマ区切りでGPU番号を並べる
-		string item;
-		while (getline(ss, item, ',')) {
-			if (!item.empty()) {
-				int gpu_id = stoi(item);
-				CNTK::DeviceDescriptor device = gpu_id >= 0 ? CNTK::DeviceDescriptor::GPUDevice((unsigned int)gpu_id) : CNTK::DeviceDescriptor::CPUDevice();
-				// CNTK::FunctionPtr modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
-				//device_models.push_back(DeviceModel(device, modelFunc));
-				device_models.push_back(DeviceModel(device));
-			}
-		}
+		//stringstream ss(Options["GPU"]);//カンマ区切りでGPU番号を並べる
+		//string item;
+		//while (getline(ss, item, ',')) {
+		//	if (!item.empty()) {
+		//		int gpu_id = stoi(item);
+		//		CNTK::DeviceDescriptor device = gpu_id >= 0 ? CNTK::DeviceDescriptor::GPUDevice((unsigned int)gpu_id) : CNTK::DeviceDescriptor::CPUDevice();
+		//		// CNTK::FunctionPtr modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
+		//		//device_models.push_back(DeviceModel(device, modelFunc));
+		//		device_models.push_back(DeviceModel(device));
+		//	}
+		//}
 		cvt = shared_ptr<DNNConverter>(new DNNConverter(format_board, format_move));
 
 		// スレッド間キュー初期化
@@ -430,7 +430,7 @@ void  Search::clear()
 		result_queue = new ipqueue<dnn_result_obj>(4, batch_size);
 
 		// 評価スレッドを立てる
-		for (int i = 0; i < device_models.size(); i++)
+		for (int i = 0; i < 1; i++)
 		{
 			dnn_threads.push_back(new std::thread(dnn_thread_main, i));
 		}
@@ -439,9 +439,9 @@ void  Search::clear()
 
 	hash_init_thread.join();
 
-#ifdef _DEBUG
+//#ifdef _DEBUG
 	std::this_thread::sleep_for(std::chrono::seconds(5));
-#endif
+//#endif
 }
 
 void flush_queue()
@@ -481,7 +481,7 @@ bool dnn_write_eval_obj(dnn_eval_obj *eval_obj, const Position &pos)
 }
 
 
-bool enqueue_pos(Position &pos, dnn_table_index &path, float &score, bool use_mate_search)
+bool enqueue_pos(const Position &pos, dnn_table_index &path, float &score, bool use_mate_search)
 {
 	if (pos.DeclarationWin() != MOVE_NONE)
 	{
@@ -502,6 +502,7 @@ bool enqueue_pos(Position &pos, dnn_table_index &path, float &score, bool use_ma
 		{
 			std::this_thread::sleep_for(std::chrono::microseconds(1));
 		}
+		sync_cout << "info string new eval obj" << (unsigned long long)eval_objs << sync_endl;
 		eval_queue_batch_index = 0;
 	}
 	dnn_eval_obj *eval_obj = &eval_objs->elements[eval_queue_batch_index];
@@ -966,6 +967,12 @@ std::atomic_bool in_search_time;
 // そのあとslaveスレッドを終了させ、ベストな指し手を返すこと。
 void MainThread::think()
 {
+	sync_cout << "info string think ";
+	for (auto m : MoveList<LEGAL>(rootPos))
+	{
+		std::cout << m.move << ",";
+	}
+	std::cout << "END" << sync_endl;
 	Time.init(Search::Limits, rootPos.side_to_move(), rootPos.game_ply());
 	long long next_pv_time = 0;
 	in_search_time = true;
