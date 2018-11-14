@@ -323,6 +323,9 @@ struct MultiThinkGenSfen : public MultiThink
 	//  search_depth = 通常探索の探索深さ
 	int search_depth;
 	int search_depth2;
+#ifdef LEARN_GENSFEN_MULTIPV
+	size_t multi_pv;
+#endif
 
 	// 生成する局面の評価値の上限
 	int eval_limit;
@@ -537,7 +540,7 @@ void MultiThinkGenSfen::thread_worker(size_t thread_id)
 				TT.new_search();
 #endif
 
-				auto pv_value1 = search(pos, depth);
+				auto pv_value1 = search(pos, depth, multi_pv);
 
 				auto value1 = pv_value1.first;
 				auto& pv1 = pv_value1.second;
@@ -710,6 +713,21 @@ void MultiThinkGenSfen::thread_worker(size_t thread_id)
 					ASSERT_LV3(pv_value1.second.size() >= 1);
 					Move pv_move1 = pv_value1.second[0];
 					psv.move = pv_move1;
+
+#ifdef LEARN_GENSFEN_MULTIPV
+					auto &rms = pos.this_thread()->rootMoves;
+					size_t n_pv = std::min(multi_pv, rms.size());//multiPVの数
+					for (size_t i = 0; i < n_pv; i++)
+					{
+						psv.multipv_moves[i] = rms[i].pv[0];
+						psv.multipv_scores[i] = rms[i].score;
+					}
+					for (size_t i = n_pv; i < LEARN_GENSFEN_MULTIPV; i++)
+					{
+						psv.multipv_moves[i] = MOVE_NONE;
+						psv.multipv_scores[i] = 0;
+					}
+#endif
 				}
 
 			SKIP_SAVE:;
@@ -840,6 +858,9 @@ void gen_sfen(Position&, istringstream& is)
 	// 探索深さ
 	int search_depth = 3;
 	int search_depth2 = INT_MIN;
+#ifdef LEARN_GENSFEN_MULTIPV
+	size_t multi_pv = LEARN_GENSFEN_MULTIPV;
+#endif
 
 	// ランダムムーブを行なう最小plyと最大plyと回数
 	int random_move_minply = 1;
@@ -886,6 +907,10 @@ void gen_sfen(Position&, istringstream& is)
 			is >> search_depth;
 		else if (token == "depth2")
 			is >> search_depth2;
+#ifdef LEARN_GENSFEN_MULTIPV
+		else if (token == "multi_pv")
+			is >> multi_pv;
+#endif
 		else if (token == "loop")
 			is >> loop_max;
 		else if (token == "output_file_name")
@@ -954,6 +979,9 @@ void gen_sfen(Position&, istringstream& is)
 
 	std::cout << "gensfen : " << endl
 		<< "  search_depth = " << search_depth << " to " << search_depth2 << endl
+#ifdef LEARN_GENSFEN_MULTIPV
+		<< "  multi_pv = " << multi_pv << endl
+#endif
 		<< "  loop_max = " << loop_max << endl
 		<< "  eval_limit = " << eval_limit << endl
 		<< "  thread_num (set by USI setoption) = " << thread_num << endl
@@ -978,6 +1006,9 @@ void gen_sfen(Position&, istringstream& is)
 		sw.save_every = save_every;
 
 		MultiThinkGenSfen multi_think(search_depth, search_depth2, sw);
+#ifdef LEARN_GENSFEN_MULTIPV
+		multi_think.multi_pv = multi_pv;
+#endif
 		multi_think.set_loop_max(loop_max);
 		multi_think.eval_limit = eval_limit;
 		multi_think.random_move_minply = random_move_minply;

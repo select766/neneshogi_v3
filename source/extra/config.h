@@ -248,6 +248,7 @@
 #define ENABLE_TEST_CMD
 // 学習絡みのオプション
 #define USE_SFEN_PACKER
+#define LEARN_GENSFEN_MULTIPV 8
 // 学習機能を有効にするオプション。
 #define EVAL_LEARN
 

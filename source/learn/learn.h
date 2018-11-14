@@ -217,6 +217,16 @@ namespace Learner
 		u8 padding;
 
 		// 32 + 2 + 2 + 2 + 1 + 1 = 40bytes
+
+#ifdef LEARN_GENSFEN_MULTIPV
+		// LEARN_GENSFEN_MULTIPVは、ファイルフォーマット上保存できるMultiPVの最大数。棋譜生成条件によってはもっと少なくできる。
+		// MultiPVで得られた指し手リスト。無効部分はMOVE_NONEとする。
+		u16 multipv_moves[LEARN_GENSFEN_MULTIPV];
+		// MultiPVの指し手ごとに対応する評価値。
+		s16 multipv_scores[LEARN_GENSFEN_MULTIPV];
+
+		// 40 + 4 * LEARN_GENSFEN_MULTIPV
+#endif
 	};
 
 	// 読み筋とそのときの評価値を返す型
