@@ -1,6 +1,7 @@
 ﻿#ifdef PYMODULE
 #include "pymodule.h"
 #include "../engine/user-engine/dnn_converter_py.h"
+#include "../engine/user-engine/print_py.h"
 
 PYBIND11_MODULE(neneshogi_cpp, m) {
 	m.doc() = "neneshogi native module";
@@ -17,6 +18,11 @@ PYBIND11_MODULE(neneshogi_cpp, m) {
 		.def("get_board_array", &DNNConverterPy::get_board_array)
 		.def("get_move_index", &DNNConverterPy::get_move_index)
 		.def("reverse_move_index", &DNNConverterPy::reverse_move_index)
+		;
+	py::class_<PrintPy>(m, "Print")
+		.def_static("move", &PrintPy::move)
+		.def_static("piece", &PrintPy::piece)
+		.def_static("board", &PrintPy::board)
 		;
 }
 

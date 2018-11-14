@@ -1,4 +1,5 @@
-﻿#ifdef PYMODULE
+﻿#pragma once
+#ifdef PYMODULE
 #include "../../extra/all.h"
 #include "dnn_converter.h"
 #include <pybind11/pybind11.h>
@@ -7,9 +8,9 @@ namespace py = pybind11;
 
 class DNNConverterPy {
 	DNNConverter cvt;
-	Position pos;
 	StateInfo init_state;
 public:
+	Position pos;
 	DNNConverterPy(int format_board, int format_move);
 	// C4316
 	void *operator new(size_t size) {
