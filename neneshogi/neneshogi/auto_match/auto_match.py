@@ -264,7 +264,7 @@ class AutoMatch:
         data.match_results = match_results
         yaml_dump(data, path)
 
-    def run_matches(self, log_prefix: str):
+    def run_matches(self, log_prefix: str) -> List[MatchResult]:
         self.engine_handles = []
         match_results = []
         self._load_init_book()
@@ -289,6 +289,7 @@ class AutoMatch:
         finally:
             self._log_file.close()
             self._log_file = None
+        return match_results
 
 
 def main():

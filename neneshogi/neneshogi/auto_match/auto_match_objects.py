@@ -1,5 +1,6 @@
 from typing import Dict, List
 import hashlib
+import yaml
 from neneshogi.util import yaml_load
 
 
@@ -39,10 +40,14 @@ class EngineConfig:
 
     @classmethod
     def load(cls, engine_file) -> "EngineConfig":
-        config_id_cand = hashlib.sha1(open(engine_file, "rb").read()).hexdigest()
-        item_dict = yaml_load(engine_file)
+        return EngineConfig.load_obj(yaml_load(engine_file))
+
+    @classmethod
+    def load_obj(cls, engine_config_obj: dict) -> "EngineConfig":
+        # yamlを読み込んだオブジェクトからインスタンスを生成する
+        config_id_cand = hashlib.sha1(yaml.dump(engine_config_obj).encode("utf-8")).hexdigest()
         inst = cls()
-        inst.__dict__.update(item_dict)
+        inst.__dict__.update(engine_config_obj)
         if not inst.config_id:
             inst.config_id = config_id_cand
         return inst
