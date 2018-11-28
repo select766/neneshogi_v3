@@ -74,7 +74,9 @@ void dnn_thread_main(int worker_idx)
 		{
 			dnn_eval_obj &eval_obj = eval_objs->elements[i];
 			dnn_result_obj &result_obj = result_objs->elements[i];
-			result_obj.static_value = (int16_t)((valueData[i][0] - 0.5) * 32000);//sigmoidで0~1で出てくる？
+
+			// 勝率=sigmoid(valueData[i][0] - valueData[i][1])
+			result_obj.static_value = (int16_t)((tanh((valueData[i][0] - valueData[i][1]) / 2.0F) + 1.0F) / 2.0F * 32000);
 
 			// 合法手内でsoftmax確率を取る
 			float raw_values[MAX_MOVES];
