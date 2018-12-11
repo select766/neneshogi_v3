@@ -33,7 +33,7 @@ class AutoMatch:
 
     def __init__(self, rule: Rule, engine_config_list: List[EngineConfig]):
         self.rule = rule
-        assert len(engine_config_list) == 2
+        # assert len(engine_config_list) == 2
         self.engine_config_list = engine_config_list
         self._log_file = None
         self.watchdog = None
