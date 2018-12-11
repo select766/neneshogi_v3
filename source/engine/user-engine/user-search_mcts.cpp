@@ -17,6 +17,9 @@ static int obsolete_removed_count = 0;
 ipqueue<dnn_eval_obj> *eval_queue = nullptr;
 ipqueue<dnn_result_obj> *result_queue = nullptr;
 
+// 定跡の指し手を選択するモジュール
+static Book::BookMoveSelector book;
+
 class TreeConfig
 {
 public:
@@ -335,6 +338,9 @@ void user_test(Position& pos_, istringstream& is)
 // USI::init()のなかからコールバックされる。
 void USI::extra_option(USI::OptionsMap & o)
 {
+	//   定跡設定
+	book.init(o);
+
 	o["GPU"] << Option("-1");//使用するGPU番号(-1==CPU)、カンマ区切りで複数指定可能
 	o["format_board"] << Option(0, 0, 16);//DNNのboard表現形式
 	o["format_move"] << Option(0, 0, 16);//DNNのmove表現形式
@@ -484,6 +490,13 @@ void  Search::clear()
 		}
 		dnn_initialized = true;
 	}
+
+	// -----------------------
+	//   定跡の読み込み
+	// -----------------------
+
+	book.read_book();
+
 
 	if (hash_init_thread)
 	{
@@ -1029,7 +1042,20 @@ void MainThread::think()
 	Move bestMove = MOVE_RESIGN;
 	Move ponderMove = MOVE_RESIGN;
 	Move declarationWinMove = rootPos.DeclarationWin();
-	if (declarationWinMove != MOVE_NONE)
+	Move bookMove;
+	if ((bookMove = book.probe(rootPos)) != MOVE_NONE)
+	{
+		// 定跡
+		sync_cout << "info string book " << bookMove << sync_endl;
+		bestMove = bookMove;
+		while (Threads.ponder && !Threads.stop)
+		{
+			// ここのThreads.stopは実際にstopコマンドが来たことを表さないといけない。探索終了時間などで書き換えると違反になる。
+			// ponder中は返してはいけない
+			sleep(1);
+		}
+	}
+	else if (declarationWinMove != MOVE_NONE)
 	{
 		// 入玉宣言勝ち
 		bestMove = declarationWinMove;
