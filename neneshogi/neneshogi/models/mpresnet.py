@@ -2,6 +2,7 @@
 MultiPV学習対応ResNet
 """
 
+import numpy as np
 import cntk as C
 from cntk.layers import Convolution2D, Dense, BatchNormalization
 
@@ -47,7 +48,7 @@ def res_block_az(input_var, count, ch):
     return C.relu(h + input_var)
 
 
-def MPResNetAZ(feature_var, board_shape, move_dim, *, ch=16, depth=4, block_depth=2, move_hidden=256):
+def MPResNetAZ(feature_var, board_shape, move_dim, *, ch=16, depth=4, block_depth=2, move_hidden=256, fp16=False):
     """
     AlphaGoZeroに似せたモデル
     :param feature_var:
@@ -59,8 +60,12 @@ def MPResNetAZ(feature_var, board_shape, move_dim, *, ch=16, depth=4, block_dept
     :param move_hidden:
     :return:
     """
-    with C.layers.default_options(init=C.glorot_uniform()):
-        h = feature_var
+    dtype = np.float16 if fp16 else np.float32
+    with C.layers.default_options(init=C.glorot_uniform(), dtype=dtype):
+        if fp16:
+            h = C.cast(feature_var, dtype)
+        else:
+            h = feature_var
         h = Convolution2D(3, ch, pad=True, bias=False)(h)
         h = BatchNormalization()(h)
         h = C.relu(h)
@@ -77,4 +82,7 @@ def MPResNetAZ(feature_var, board_shape, move_dim, *, ch=16, depth=4, block_dept
         value = C.relu(value)
         value = Dense(2)(value)
 
+    if fp16:
+        policy = C.cast(policy, np.float32)
+        value = C.cast(value, np.float32)
     return policy, value
