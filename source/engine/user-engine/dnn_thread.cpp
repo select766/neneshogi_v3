@@ -8,7 +8,9 @@
 
 vector<DeviceModel> device_models;
 shared_ptr<DNNConverter> cvt;
-float play_temperature;
+float policy_temperature;
+float value_temperature;
+float value_scale;
 
 void dnn_thread_main(int worker_idx)
 {
@@ -32,14 +34,11 @@ void dnn_thread_main(int worker_idx)
 	CNTK::Variable valueVar = outputVars[1];
 
 	int ctr = 0;
+	ipqueue_item<dnn_eval_obj> *eval_objs = eval_queue->alloc_read_buf();
+	vector<float> inputData(sample_size * eval_queue->batch_size());
 	while (true)
 	{
-		ipqueue_item<dnn_eval_obj> *eval_objs;
-		while (!(eval_objs = eval_queue->begin_read()))
-		{
-			std::this_thread::sleep_for(std::chrono::microseconds(1));
-		}
-		vector<float> inputData(sample_size * eval_queue->batch_size());
+		eval_queue->read_to_buf(eval_objs);
 		// eval_objsをDNN評価
 		for (int i = 0; i < eval_objs->count; i++)
 		{
@@ -77,7 +76,7 @@ void dnn_thread_main(int worker_idx)
 			dnn_result_obj &result_obj = result_objs->elements[i];
 
 			// 勝率=tanh(valueData[i][0] - valueData[i][1])
-			result_obj.static_value = (int16_t)(tanh(valueData[i][0] - valueData[i][1]) * 32000);
+			result_obj.static_value = (int16_t)(tanh((valueData[i][0] - valueData[i][1]) / value_temperature) * value_scale * 32000);
 
 			// 合法手内でsoftmax確率を取る
 			float raw_values[MAX_MOVES];
@@ -94,7 +93,7 @@ void dnn_thread_main(int worker_idx)
 			float exp_sum = 0.0F;
 			for (int j = 0; j < eval_obj.n_moves; j++)
 			{
-				float e = std::exp((raw_values[j] - raw_max) / play_temperature);//temperatureで割る
+				float e = std::exp((raw_values[j] - raw_max) / policy_temperature);//temperatureで割る
 				exps[j] = e;
 				exp_sum += e;
 			}
@@ -109,7 +108,6 @@ void dnn_thread_main(int worker_idx)
 		result_objs->count = eval_objs->count;
 
 		// reqult_queueに結果を書く
-		eval_queue->end_read();
 		result_queue->end_write();
 	}
 

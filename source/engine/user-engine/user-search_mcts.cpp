@@ -20,9 +20,7 @@ class TreeConfig
 {
 public:
 	float c_puct;
-	float play_temperature;
 	int virtual_loss;
-	float value_scale;
 	bool clear_table_before_search;
 };
 
@@ -338,10 +336,10 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["PvInterval"] << Option(300, 0, 100000);//PV出力する間隔[ms]
 	o["MCTSHash"] << Option(1, 1, 1024);//MCTSのハッシュテーブルのサイズ[GB]上限。
 	o["c_puct"] << Option("1.0");
-	o["play_temperature"] << Option("1.0");
+	o["policy_temperature"] << Option("1.0");
 	o["softmax"] << Option("1.0");
 	o["value_scale"] << Option("1.0");
-	o["value_slope"] << Option("1.0");
+	o["value_temperature"] << Option("1.0");
 	o["virtual_loss"] << Option(1, 0, 100);
 	o["clear_table"] << Option(false);
 	o["batch_size"] << Option(16, 1, 65536);
@@ -381,10 +379,10 @@ void  Search::clear()
 		sync_cout << "info string node hash init completed" << sync_endl;
 	});
 	tree_config.c_puct = (float)atof(((string)Options["c_puct"]).c_str());
-	tree_config.play_temperature = (float)atof(((string)Options["play_temperature"]).c_str());
-	play_temperature = (float)atof(((string)Options["play_temperature"]).c_str());
 	tree_config.virtual_loss = (int)Options["virtual_loss"];
-	tree_config.value_scale = (float)atof(((string)Options["value_scale"]).c_str());
+	policy_temperature = (float)atof(((string)Options["policy_temperature"]).c_str());
+	value_scale = (float)atof(((string)Options["value_scale"]).c_str());
+	value_temperature = (float)atof(((string)Options["value_temperature"]).c_str());
 	tree_config.clear_table_before_search = (bool)Options["clear_table"];
 
 #ifdef USE_MCTS_MATE_ENGINE
@@ -567,7 +565,7 @@ void update_on_dnn_result(dnn_result_obj *result_obj)
 		// n, w, qは0初期化されている
 	}
 	leaf_node.n_children = n_moves_use;
-	float score = result_obj->static_value / 32000.0F * tree_config.value_scale; // [-1.0, 1.0]
+	float score = result_obj->static_value / 32000.0F; // [-1.0, 1.0]
 	leaf_node.score = score;
 
 	backup_tree(score, path);

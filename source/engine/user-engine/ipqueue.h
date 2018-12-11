@@ -127,6 +127,28 @@ public:
 		metaBuf.end_read();
 	}
 
+	ipqueue_item<T>* alloc_read_buf()
+	{
+		return reinterpret_cast<ipqueue_item<T>*>(new char[item_size]);
+	}
+
+	void free_read_buf(ipqueue_item<T>* buf)
+	{
+		delete reinterpret_cast<char*>(buf);
+	}
+
+	void read_to_buf(ipqueue_item<T>* buf)
+	{
+		ipqueue_item<T>* src = nullptr;
+		while (!(src = begin_read()))
+		{
+			std::this_thread::sleep_for(std::chrono::microseconds(1));
+		}
+		memcpy(buf, src, item_size);
+		end_read();
+	}
+
+
 	ipqueue_item<T>* begin_write()
 	{
 		std::lock_guard<std::mutex> lock(_mut);

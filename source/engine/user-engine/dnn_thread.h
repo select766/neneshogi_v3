@@ -10,7 +10,9 @@
 
 extern ipqueue<dnn_eval_obj> *eval_queue;
 extern ipqueue<dnn_result_obj> *result_queue;
-extern float play_temperature;
+extern float policy_temperature;
+extern float value_temperature;
+extern float value_scale;
 
 class DeviceModel
 {
