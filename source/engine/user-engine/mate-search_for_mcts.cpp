@@ -2,7 +2,7 @@
 
 #include "../../shogi.h"
 
-#ifdef USER_ENGINE_MCTS_ASYNC
+#ifdef USER_ENGINE_MCTS
 #ifdef USE_MCTS_MATE_ENGINE
 
 #include "../../extra/all.h"

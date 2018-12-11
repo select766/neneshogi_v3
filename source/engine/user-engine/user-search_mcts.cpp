@@ -281,9 +281,10 @@ static int eval_count_this_search = 0;// 探索開始から評価したノード
 static int special_terminal_count_this_search = 0;// 探索開始から、評価関数呼び出し以外の終端ノードに到達した回数。
 static bool dnn_initialized = false;
 static int block_queue_length = 2;
-//TODO mate_searchを利用可能にする
-//static MateEngine::MateSearchForMCTS *mate_search_root = nullptr;
+#ifdef USE_MCTS_MATE_ENGINE
+static MateEngine::MateSearchForMCTS *mate_search_root = nullptr;
 //static MateEngine::MateSearchForMCTS *mate_search_leaf = nullptr;
+#endif
 static int mate_search_leaf_count = 0;//末端ノードの詰み探索で詰みと判定された回数
 static vector<Move> root_mate_pv;
 static atomic<bool> root_mate_found;
@@ -391,11 +392,11 @@ void  Search::clear()
 		mate_search_root = new MateEngine::MateSearchForMCTS();
 		mate_search_root->init(1024, MAX_PLY);
 	}
-	if (mate_search_leaf == nullptr)
-	{
-		mate_search_leaf = new MateEngine::MateSearchForMCTS();
-		mate_search_leaf->init(1024, 3);
-	}
+	//if (mate_search_leaf == nullptr)
+	//{
+	//	mate_search_leaf = new MateEngine::MateSearchForMCTS();
+	//	mate_search_leaf->init(1024, 3);
+	//}
 #endif
 
 	if (!dnn_initialized)
@@ -1147,22 +1148,24 @@ void MainThread::think()
 void Thread::search()
 {
 	// 詰み探索slaveスレッドを1個だけ立てる
-	//sync_cout << "info string mate search thread started" << sync_endl;
-	//if (mate_search_root->dfpn(rootPos, &root_mate_pv))
-	//{
-	//	root_mate_found = true;
-	//	sync_cout << "info string root MATE FOUND!" << sync_endl;
-	//	sync_cout << "info depth " << root_mate_pv.size() << " score mate " << root_mate_pv.size() << " pv";
-	//	for (auto m : root_mate_pv)
-	//	{
-	//		cout << " " << m;
-	//	}
-	//	cout << sync_endl;
-	//}
-	//else
-	//{
-	//	sync_cout << "info string NO root mate" << sync_endl;
-	//}
+#ifdef USE_MCTS_MATE_ENGINE
+	sync_cout << "info string mate search thread started" << sync_endl;
+	if (mate_search_root->dfpn(rootPos, &root_mate_pv))
+	{
+		root_mate_found = true;
+		sync_cout << "info string root MATE FOUND!" << sync_endl;
+		sync_cout << "info depth " << root_mate_pv.size() << " score mate " << root_mate_pv.size() << " pv";
+		for (auto m : root_mate_pv)
+		{
+			cout << " " << m;
+		}
+		cout << sync_endl;
+	}
+	else
+	{
+		sync_cout << "info string NO root mate" << sync_endl;
+	}
+#endif
 }
 
 #endif // USER_ENGINE
