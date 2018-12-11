@@ -73,38 +73,64 @@ def load_checkpoint(checkpoint_dir, model_config, data_sources):
 
 
 # Create the network.
-def create_shogi_model(board_shape, move_dim, model_config, loss_config, restore_path=None):
+def create_shogi_model(board_shape, move_dim, model_config, loss_config, restore_path=None, fp16=False):
+    dtype = np.float16 if fp16 else np.float32
     # Input variables denoting the features and label data
     feature_var = C.input_variable(board_shape)
     policy_var = C.input_variable(move_dim)
     result_var = C.input_variable(2)
     winrate_var = C.input_variable(2)
     multi_policy_var = C.input_variable(move_dim)
-
-    if restore_path:
-        logging.info(f"restoring from {restore_path}")
-        model_function = C.load_model(restore_path)
-        combined = model_function(feature_var)
-        policy = combined[0]
-        value = combined[1]
+    if fp16:
+        feature_var_c = C.cast(feature_var, np.float16)
+        policy_var_c = C.cast(policy_var, np.float16)
+        result_var_c = C.cast(result_var, np.float16)
+        winrate_var_c = C.cast(winrate_var, np.float16)
+        multi_policy_var_c = C.cast(multi_policy_var, np.float16)
     else:
-        model_function = getattr(models, model_config["name"])
-        policy, value = model_function(feature_var, board_shape, move_dim, **model_config["kwargs"])
+        feature_var_c = feature_var
+        policy_var_c = policy_var
+        result_var_c = result_var
+        winrate_var_c = winrate_var
+        multi_policy_var_c = multi_policy_var
 
-    # loss and metric
-    # loss_config["multipv_temperature"] -> 0ならhard, ->infならsoft
-    multi_policy_prob = C.softmax(multi_policy_var * (1.0 / loss_config["multipv_temperature"]))
-    loss_policy_ce = C.cross_entropy_with_softmax(policy, policy_var)
-    loss_multi_policy_ce = C.cross_entropy_with_softmax(policy, multi_policy_prob)
-    loss_policy_cle = C.classification_error(policy, policy_var)  # classification errorはPVに対して計算
-    loss_policy_cle5 = C.classification_error(policy, policy_var, topN=5)
-    loss_result_ce = C.cross_entropy_with_softmax(value, result_var)
-    loss_winrate_ce = C.cross_entropy_with_softmax(value, winrate_var)
-    loss_result_cle = C.classification_error(value, result_var)  # 勝敗の識別率
-    total_error = loss_policy_ce * loss_config["weight_policy"] \
-                  + loss_multi_policy_ce * loss_config["weight_multi_policy"] \
-                  + loss_result_ce * loss_config["weight_result"] \
-                  + loss_winrate_ce * loss_config["weight_winrate"]
+    with C.default_options(dtype=dtype):
+        if restore_path:
+            logging.info(f"restoring from {restore_path}")
+            model_function = C.load_model(restore_path)
+            combined = model_function(feature_var_c)
+            policy = combined[0]
+            value = combined[1]
+        else:
+            model_function = getattr(models, model_config["name"])
+            policy, value = model_function(feature_var_c, board_shape, move_dim, **model_config["kwargs"])
+
+        # loss and metric
+        # loss_config["multipv_temperature"] -> 0ならhard, ->infならsoft
+        multi_policy_prob = C.softmax(multi_policy_var_c * (1.0 / loss_config["multipv_temperature"]))
+        loss_policy_ce = C.cross_entropy_with_softmax(policy, policy_var_c)
+        loss_multi_policy_ce = C.cross_entropy_with_softmax(policy, multi_policy_prob)
+        loss_policy_cle = C.classification_error(policy, policy_var_c)  # classification errorはPVに対して計算
+        # trainで正しく表示されないうえ、
+        # fp16で"ValueError: an ComputationNodeBasePtr of mismatching precision was passed"で落ちる
+        # loss_policy_cle5 = C.classification_error(policy, policy_var_c, topN=5)
+        loss_result_ce = C.cross_entropy_with_softmax(value, result_var_c)
+        loss_winrate_ce = C.cross_entropy_with_softmax(value, winrate_var_c)
+        loss_result_cle = C.classification_error(value, result_var_c)  # 勝敗の識別率
+        total_error = loss_policy_ce * loss_config["weight_policy"] \
+                      + loss_multi_policy_ce * loss_config["weight_multi_policy"] \
+                      + loss_result_ce * loss_config["weight_result"] \
+                      + loss_winrate_ce * loss_config["weight_winrate"]
+
+    if fp16:
+        loss_policy_ce = C.cast(loss_policy_ce, np.float32)
+        loss_multi_policy_ce = C.cast(loss_multi_policy_ce, np.float32)
+        loss_policy_cle = C.cast(loss_policy_cle, np.float32)
+        # loss_policy_cle5 = C.cast(loss_policy_cle5, np.float32)
+        loss_result_ce = C.cast(loss_result_ce, np.float32)
+        loss_winrate_ce = C.cast(loss_winrate_ce, np.float32)
+        loss_result_cle = C.cast(loss_result_cle, np.float32)
+        total_error = C.cast(total_error, np.float32)
 
     return {
         'feature': feature_var,
@@ -115,7 +141,7 @@ def create_shogi_model(board_shape, move_dim, model_config, loss_config, restore
         'losses': {"policy_ce": loss_policy_ce,
                    "multi_policy_ce": loss_multi_policy_ce,
                    "policy_cle": loss_policy_cle,
-                   "policy_cle5": loss_policy_cle5,
+                   # "policy_cle5": loss_policy_cle5,
                    "result_ce": loss_result_ce,
                    "winrate_ce": loss_winrate_ce,
                    "result_cle": loss_result_cle},
@@ -151,7 +177,7 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
         if not os.path.exists(restore_path):
             restore_path = None
     network = create_shogi_model(train_source.board_shape, train_source.move_dim, model_config, solver_config["loss"],
-                                 restore_path)
+                                 restore_path, model_config.get("fp16", False))
     lr_schedule = C.learning_parameter_schedule(1e-4)
     mm_schedule = C.learners.momentum_schedule(0.9)
     learner = C.learners.momentum_sgd(network['output'].parameters, lr_schedule, mm_schedule, unit_gain=False,
