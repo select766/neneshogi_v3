@@ -5,6 +5,7 @@
 #include <chrono>
 #include <numeric>
 #include <functional>
+#include <cstdlib>
 #include "CNTKLibrary.h"
 #include "mate-search_for_mcts.h"
 #include "dnn_converter.h"
@@ -289,6 +290,9 @@ static int mate_search_leaf_count = 0;//末端ノードの詰み探索で詰み�
 static vector<Move> root_mate_pv;
 static atomic<bool> root_mate_found;
 static vector<std::thread*> dnn_threads;
+// 環境変数で指定したサイズの置換表を事前確保
+static std::thread* advance_hash_init_thread = nullptr;
+static unsigned long long advance_node_hash_size = 0;
 
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
 void user_test(Position& pos_, istringstream& is)
@@ -350,12 +354,38 @@ void USI::extra_option(USI::OptionsMap & o)
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
 void Search::init()
 {
+	// 環境変数で指定したサイズの置換表を事前確保
+	// 大会で、数十GBのメモリをisreadyの際に確保&ゼロクリアしようとすると数十秒かかる。
+	// 対局開始になってからisreadyが来るため、相手を待たせてしまう。
+	// 起動時に環境変数でサイズを指定された場合は、ここで確保しておくことによりサーバログイン直後に時間を使える。
+	// 2局以上連続することは想定していない。最初の1局に対してのみ有効。
+	char* advance_node_hash_size_str = getenv("NENESHOGI_NODE_HASH_SIZE");
+	if (advance_node_hash_size_str && strlen(advance_node_hash_size_str) > 0)
+	{
+		advance_node_hash_size = strtoull(advance_node_hash_size_str, nullptr, 10);
+		if (advance_node_hash_size > 0)
+		{
+			advance_hash_init_thread = new std::thread([] {
+				sync_cout << "info string advance node hash initializing" << sync_endl;
+				node_hash = new NodeHash((int)advance_node_hash_size);
+				sync_cout << "info string advance node hash init completed" << sync_endl;
+			});
+		}
+	}
 }
 
 // isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
 void  Search::clear()
 {
-	if (node_hash)
+	bool advance_initialized = false;
+	if (advance_hash_init_thread)
+	{
+		advance_hash_init_thread->join();
+		delete advance_hash_init_thread;
+		advance_hash_init_thread = nullptr;
+		advance_initialized = true;
+	}
+	else if (node_hash)
 	{
 		delete node_hash;
 		node_hash = nullptr;
@@ -373,12 +403,25 @@ void  Search::clear()
 	}
 	node_hash_size >>= 1;
 
-	sync_cout << "info string node hash " << (node_hash_size / (1024 * 1024)) << "M elements (Max " << MAX_UCT_CHILDREN << "moves / node)" << sync_endl;
+	sync_cout << "info string node hash " << node_hash_size << " elements (" << (node_hash_size / (1024 * 1024)) << "M) (Max " << MAX_UCT_CHILDREN << "moves / node)" << sync_endl;
 
-	auto hash_init_thread = std::thread([node_hash_size] {
-		node_hash = new NodeHash((int)node_hash_size);
-		sync_cout << "info string node hash init completed" << sync_endl;
-	});
+	std::thread* hash_init_thread = nullptr;
+	if (!advance_initialized)
+	{
+		hash_init_thread = new std::thread([node_hash_size] {
+			node_hash = new NodeHash((int)node_hash_size);
+			sync_cout << "info string node hash init completed" << sync_endl;
+		});
+	}
+	else
+	{
+		if (node_hash_size != advance_node_hash_size)
+		{
+			//サイズが間違ってるのでエラーとして終了
+			sync_cout << "info string node hash size mismatch! " << node_hash_size << "!=" << advance_node_hash_size << sync_endl;
+			return;
+		}
+	}
 	tree_config.c_puct = (float)atof(((string)Options["c_puct"]).c_str());
 	tree_config.virtual_loss = (int)Options["virtual_loss"];
 	policy_temperature = (float)atof(((string)Options["policy_temperature"]).c_str());
@@ -442,7 +485,12 @@ void  Search::clear()
 		dnn_initialized = true;
 	}
 
-	hash_init_thread.join();
+	if (hash_init_thread)
+	{
+		hash_init_thread->join();
+		delete hash_init_thread;
+		hash_init_thread = nullptr;
+	}
 
 #ifdef _DEBUG
 	std::this_thread::sleep_for(std::chrono::seconds(5));
