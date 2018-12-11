@@ -382,6 +382,7 @@ void  Search::clear()
 	});
 	tree_config.c_puct = (float)atof(((string)Options["c_puct"]).c_str());
 	tree_config.play_temperature = (float)atof(((string)Options["play_temperature"]).c_str());
+	play_temperature = (float)atof(((string)Options["play_temperature"]).c_str());
 	tree_config.virtual_loss = (int)Options["virtual_loss"];
 	tree_config.value_scale = (float)atof(((string)Options["value_scale"]).c_str());
 	tree_config.clear_table_before_search = (bool)Options["clear_table"];

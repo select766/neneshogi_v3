@@ -8,6 +8,7 @@
 
 vector<DeviceModel> device_models;
 shared_ptr<DNNConverter> cvt;
+float play_temperature;
 
 void dnn_thread_main(int worker_idx)
 {
@@ -75,8 +76,8 @@ void dnn_thread_main(int worker_idx)
 			dnn_eval_obj &eval_obj = eval_objs->elements[i];
 			dnn_result_obj &result_obj = result_objs->elements[i];
 
-			// 勝率=sigmoid(valueData[i][0] - valueData[i][1])
-			result_obj.static_value = (int16_t)((tanh((valueData[i][0] - valueData[i][1]) / 2.0F) + 1.0F) / 2.0F * 32000);
+			// 勝率=tanh(valueData[i][0] - valueData[i][1])
+			result_obj.static_value = (int16_t)(tanh(valueData[i][0] - valueData[i][1]) * 32000);
 
 			// 合法手内でsoftmax確率を取る
 			float raw_values[MAX_MOVES];
@@ -93,7 +94,7 @@ void dnn_thread_main(int worker_idx)
 			float exp_sum = 0.0F;
 			for (int j = 0; j < eval_obj.n_moves; j++)
 			{
-				float e = std::exp((raw_values[j] - raw_max) / 1.0F);//temperatureで割る
+				float e = std::exp((raw_values[j] - raw_max) / play_temperature);//temperatureで割る
 				exps[j] = e;
 				exp_sum += e;
 			}
