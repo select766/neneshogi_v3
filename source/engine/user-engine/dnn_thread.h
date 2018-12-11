@@ -5,6 +5,7 @@
 #include "dnn_converter.h"
 #include "dnn_eval_obj.h"
 #include <numeric>
+#include <atomic>
 #include <vector>
 #include <functional>
 
@@ -13,6 +14,7 @@ extern ipqueue<dnn_result_obj> *result_queue;
 extern float policy_temperature;
 extern float value_temperature;
 extern float value_scale;
+extern std::atomic_int n_dnn_thread_initalized;
 
 class DeviceModel
 {

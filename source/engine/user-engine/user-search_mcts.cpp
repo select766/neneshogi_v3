@@ -433,6 +433,12 @@ void  Search::clear()
 		{
 			dnn_threads.push_back(new std::thread(dnn_thread_main, i));
 		}
+
+		// スレッドの動作開始(DNNの初期化)まで待つ
+		while (n_dnn_thread_initalized < dnn_threads.size())
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
 		dnn_initialized = true;
 	}
 

@@ -11,6 +11,7 @@ shared_ptr<DNNConverter> cvt;
 float policy_temperature;
 float value_temperature;
 float value_scale;
+std::atomic_int n_dnn_thread_initalized = 0;
 
 void dnn_thread_main(int worker_idx)
 {
@@ -36,6 +37,31 @@ void dnn_thread_main(int worker_idx)
 	int ctr = 0;
 	ipqueue_item<dnn_eval_obj> *eval_objs = eval_queue->alloc_read_buf();
 	vector<float> inputData(sample_size * eval_queue->batch_size());
+	if (true)
+	{
+		// ダミー評価。対局中に初回の評価を行うと各種初期化が走って持ち時間をロスするため。
+		// Create input value and input data map
+		CNTK::ValuePtr inputVal = CNTK::Value::CreateBatch(inputVar.Shape(), inputData, device);
+		std::unordered_map<CNTK::Variable, CNTK::ValuePtr> inputDataMap = { { inputVar, inputVal } };
+
+		// Create output data map. Using null as Value to indicate using system allocated memory.
+		// Alternatively, create a Value object and add it to the data map.
+		std::unordered_map<CNTK::Variable, CNTK::ValuePtr> outputDataMap = { { policyVar, nullptr }, { valueVar, nullptr } };
+
+		// Start evaluation on the device
+		modelFunc->Evaluate(inputDataMap, outputDataMap, device);
+
+		// Get evaluate result as dense output
+		CNTK::ValuePtr policyVal = outputDataMap[policyVar];
+		std::vector<std::vector<float>> policyData;
+		policyVal->CopyVariableValueTo(policyVar, policyData);
+		CNTK::ValuePtr valueVal = outputDataMap[valueVar];
+		std::vector<std::vector<float>> valueData;
+		valueVal->CopyVariableValueTo(valueVar, valueData);
+	}
+
+	n_dnn_thread_initalized.fetch_add(1);
+
 	while (true)
 	{
 		eval_queue->read_to_buf(eval_objs);
