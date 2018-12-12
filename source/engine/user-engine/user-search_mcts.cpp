@@ -6,6 +6,7 @@
 #include <numeric>
 #include <functional>
 #include <cstdlib>
+#include <Windows.h>
 #include "CNTKLibrary.h"
 #include "mate-search_for_mcts.h"
 #include "dnn_converter.h"
@@ -296,6 +297,10 @@ static vector<std::thread*> dnn_threads;
 // 環境変数で指定したサイズの置換表を事前確保
 static std::thread* advance_hash_init_thread = nullptr;
 static unsigned long long advance_node_hash_size = 0;
+// GPUロックタイムアウト
+// epochからの秒数がこの値以上の時、ロックを解放する。
+static atomic<std::chrono::seconds> gpu_lock_timeout(std::chrono::seconds(0));
+static std::thread* gpu_lock_thread = nullptr;
 
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
 void user_test(Position& pos_, istringstream& is)
@@ -357,6 +362,45 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["block_queue_length"] << Option(2, 1, 64);
 }
 
+// GPUをロックするスレッド。
+// 特定のMutexを作成することで、学習プロセスはそれを察知してGPU利用を一旦停止する。
+// タイムアウトでMutexを削除する。
+void gpu_lock_thread_main()
+{
+	HANDLE hMutex = NULL;
+	while (true)
+	{
+		std::this_thread::sleep_for(std::chrono::seconds(1));
+		auto current = chrono::duration_cast<chrono::seconds>(chrono::system_clock::now().time_since_epoch());
+		if (hMutex && gpu_lock_timeout.load() < current)
+		{
+			// Mutex削除
+			sync_cout << "info string release gpu lock" << sync_endl;
+			CloseHandle(hMutex);
+			hMutex = NULL;
+		}
+		else if (!hMutex && gpu_lock_timeout.load() >= current)
+		{
+			// Mutex作成
+			sync_cout << "info string acquire gpu lock" << sync_endl;
+			hMutex = CreateMutex(NULL, FALSE, TEXT("NENESHOGI_GPU_LOCK"));
+			if (!hMutex)
+			{
+				sync_cout << "info string FAILED acquire gpu lock" << sync_endl;
+			}
+		}
+	}
+	
+}
+
+// GPUのロックタイムアウトを延長する。
+void gpu_lock_extend()
+{
+	sync_cout << "info string extending gpu lock" << sync_endl;
+	auto next_timeout = chrono::system_clock::now() + chrono::seconds(60);//1手60秒以上はめったにないのでこれぐらいで
+	gpu_lock_timeout.store(chrono::duration_cast<chrono::seconds>(next_timeout.time_since_epoch()));
+}
+
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
 void Search::init()
 {
@@ -378,11 +422,15 @@ void Search::init()
 			});
 		}
 	}
+
+	gpu_lock_thread = new std::thread(gpu_lock_thread_main);
+	gpu_lock_thread->detach();//プロセス終了時に自動的に終了させる
 }
 
 // isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
 void  Search::clear()
 {
+	gpu_lock_extend();
 	bool advance_initialized = false;
 	if (advance_hash_init_thread)
 	{
@@ -1031,6 +1079,7 @@ std::atomic_bool in_search_time;
 // そのあとslaveスレッドを終了させ、ベストな指し手を返すこと。
 void MainThread::think()
 {
+	gpu_lock_extend();
 	Time.init(Search::Limits, rootPos.side_to_move(), rootPos.game_ply());
 	long long next_pv_time = 0;
 	in_search_time = true;

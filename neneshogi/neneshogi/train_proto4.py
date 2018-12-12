@@ -31,6 +31,7 @@ from neneshogi.packed_sfen_data_source import PackedSfenDataSource
 from neneshogi import models
 from neneshogi.train_manager import TrainManager
 import neneshogi.log
+from neneshogi.mutex_stopper import MutexStopper
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,7 @@ def create_shogi_model(board_shape, move_dim, model_config, loss_config, restore
 
 
 def shogi_train_and_eval(solver_config, model_config, workdir, restore):
+    stopper = MutexStopper()
     epochs = solver_config["epoch"]
     ds_train_config = solver_config["dataset"]["train"]
     train_source = PackedSfenDataSource(ds_train_config["path"], count=ds_train_config["count"],
@@ -182,6 +184,8 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
     i = 0
     while True:
         action = manager.get_next_action()
+        if stopper.wait():
+            logger.info("GPU lock released")
         if action["action"] == "quit":
             break
         if action["action"] == "train":
