@@ -22,7 +22,9 @@ from .auto_match_objects import Rule, EngineConfig, MatchResult, AutoMatchResult
 
 class NextMoveEvaluator(AutoMatch):
     def __init__(self, engine_config: EngineConfig):
-        super().__init__(Rule(), [engine_config])  # Ruleはダミー
+        rule = Rule()
+        rule.max_go_time = 1000  # 1000秒
+        super().__init__(rule, [engine_config])  # Ruleはダミー
 
     def _run_single_evaluation(self, kifu: str) -> Tuple[str, str]:
         board = shogi.Board()
@@ -32,7 +34,7 @@ class NextMoveEvaluator(AutoMatch):
         bestmove = self._get_bestmove(board, 0)
         return bestmove, moves[-1]  # 予測手と正解
 
-    def run_evaluation(self, log_prefix: str, kifus: List[str]) -> Tuple[List[str], float]:
+    def run_evaluation(self, log_prefix: str, kifus: List[str], cleanup_moves: int) -> Tuple[List[str], float]:
         self.engine_handles = []
         bestmoves = []
         self._log_file = open(log_prefix + ".log", "a")
@@ -53,8 +55,8 @@ class NextMoveEvaluator(AutoMatch):
                 if pred_move == gt_move:
                     correct += 1
                 cleanup_ctr += 1
-                if cleanup_ctr >= 100:
-                    # 置換表フルを避けるため、100手思考したところでリセット
+                if cleanup_ctr >= cleanup_moves:
+                    # 置換表フルを避けるため、cleanup_moves手思考したところでリセット
                     self._engine_write(0, f"gameover win")
                     self._isready_engine(0)
                     self._engine_write(0, "usinewgame")
@@ -79,13 +81,14 @@ def main():
     parser.add_argument("kifu")
     parser.add_argument("engine")
     parser.add_argument("--log_prefix")
+    parser.add_argument("--cleanup_moves", type=int, default=100)
     args = parser.parse_args()
     log_prefix = args.log_prefix or f"data/next_move_evaluation/next_move_evaluation_{time.strftime('%Y%m%d%H%M%S')}_{os.getpid()}"
     engine_config = EngineConfig.load(args.engine)
     with open(args.kifu) as f:
         kifus = f.readlines()
     auto_match = NextMoveEvaluator(engine_config)
-    bestmoves, accuracy = auto_match.run_evaluation(log_prefix, kifus)
+    bestmoves, accuracy = auto_match.run_evaluation(log_prefix, kifus, args.cleanup_moves)
     print(f"accuracy: {accuracy}")
 
 

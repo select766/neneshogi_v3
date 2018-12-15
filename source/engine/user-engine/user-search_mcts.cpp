@@ -301,6 +301,7 @@ static unsigned long long advance_node_hash_size = 0;
 // epochからの秒数がこの値以上の時、ロックを解放する。
 static atomic<std::chrono::seconds> gpu_lock_timeout(std::chrono::seconds(0));
 static std::thread* gpu_lock_thread = nullptr;
+static int print_status = 0;
 
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
 void user_test(Position& pos_, istringstream& is)
@@ -360,6 +361,7 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["clear_table"] << Option(false);
 	o["batch_size"] << Option(16, 1, 65536);
 	o["block_queue_length"] << Option(2, 1, 64);
+	o["print_status"] << Option(0, 0, 1000000);//指定されたノード数探索するごとに探索状態を表示。
 }
 
 // GPUをロックするスレッド。
@@ -482,6 +484,7 @@ void  Search::clear()
 	value_scale = (float)atof(((string)Options["value_scale"]).c_str());
 	value_temperature = (float)atof(((string)Options["value_temperature"]).c_str());
 	tree_config.clear_table_before_search = (bool)Options["clear_table"];
+	print_status = (int)Options["print_status"];
 
 #ifdef USE_MCTS_MATE_ENGINE
 	if (mate_search_root == nullptr)
@@ -1029,6 +1032,27 @@ void print_pv(int root_index, Position &rootPos)
 	std::cout << sync_endl;
 }
 
+void print_search_status(int root_index, Position &rootPos)
+{
+	UctNode *root_node = &node_hash->nodes[root_index];
+	// 自動処理したいのでjsonでパースできるようにする
+	sync_cout << "info string PSS {";
+	std::cout << "\"moves\":[";
+	for (int i = 0; i < root_node->n_children; i++)
+	{
+		if (i > 0)
+		{
+			std::cout << ",";
+		}
+		std::cout << "{\"move\":\"" << root_node->move_list[i] << "\",";
+		std::cout << "\"n\":" << root_node->value_n[i] << ",\"p\":" << root_node->value_p[i]
+			<< ",\"w\":" << root_node->value_w[i] << "}";
+	}
+	std::cout << "]}";
+	std::cout << sync_endl;
+
+}
+
 void select_best_move(Position &rootPos, UctNode &root_node, Move &bestMove, Move &ponderMove)
 {
 	int best_n = -1;
@@ -1082,6 +1106,7 @@ void MainThread::think()
 	gpu_lock_extend();
 	Time.init(Search::Limits, rootPos.side_to_move(), rootPos.game_ply());
 	long long next_pv_time = 0;
+	int next_status_print_nodes = 0;
 	in_search_time = true;
 	if (tree_config.clear_table_before_search)
 	{
@@ -1219,6 +1244,14 @@ void MainThread::think()
 							next_pv_time += pv_interval;
 						}
 					}
+				}
+
+				if (print_status > 0 && next_status_print_nodes <= root_node.value_n_sum)
+				{
+					// 置換表に最初からルートノードがあり、初回からroot_node.value_n_sumが大きい場合あり
+					// root_node.value_n_sumより大きい最小のprint_statusの倍数
+					print_search_status(root_index, rootPos);
+					next_status_print_nodes = (root_node.value_n_sum + print_status) / print_status * print_status;
 				}
 			}
 
