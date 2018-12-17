@@ -102,7 +102,11 @@ void dnn_thread_main(int worker_idx)
 			dnn_result_obj &result_obj = result_objs->elements[i];
 
 			// 勝率=tanh(valueData[i][0] - valueData[i][1])
+#ifdef EVAL_KPPT
+			result_obj.static_value = eval_obj.static_value;
+#else
 			result_obj.static_value = (int16_t)(tanh((valueData[i][0] - valueData[i][1]) / value_temperature) * value_scale * 32000);
+#endif
 
 			// 合法手内でsoftmax確率を取る
 			float raw_values[MAX_MOVES];

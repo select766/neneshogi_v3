@@ -302,6 +302,7 @@ static unsigned long long advance_node_hash_size = 0;
 static atomic<std::chrono::seconds> gpu_lock_timeout(std::chrono::seconds(0));
 static std::thread* gpu_lock_thread = nullptr;
 static int print_status = 0;
+static int single_thread_until = 0;
 
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
 void user_test(Position& pos_, istringstream& is)
@@ -362,6 +363,7 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["batch_size"] << Option(16, 1, 65536);
 	o["block_queue_length"] << Option(2, 1, 64);
 	o["print_status"] << Option(0, 0, 1000000);//指定されたノード数探索するごとに探索状態を表示。
+	o["single_thread_until"] << Option(10000, 0, 10000000);
 }
 
 // GPUをロックするスレッド。
@@ -485,6 +487,7 @@ void  Search::clear()
 	value_temperature = (float)atof(((string)Options["value_temperature"]).c_str());
 	tree_config.clear_table_before_search = (bool)Options["clear_table"];
 	print_status = (int)Options["print_status"];
+	single_thread_until = (int)Options["single_thread_until"];
 
 #ifdef USE_MCTS_MATE_ENGINE
 	if (mate_search_root == nullptr)
@@ -576,6 +579,12 @@ void flush_queue()
 
 bool dnn_write_eval_obj(dnn_eval_obj *eval_obj, const Position &pos)
 {
+#ifdef EVAL_KPPT
+	// 比較実験用。評価値をKPPTのものに置き換える。
+	auto raw_value = Eval::evaluate(pos);
+	// 勝率(-1~1)に変換
+	eval_obj->static_value = (int16_t)(std::tanh((float)raw_value / 600.0F) * 32000);
+#endif
 	cvt->get_board_array(pos, eval_obj->input_array);
 
 	int m_i = 0;
@@ -1224,7 +1233,7 @@ void MainThread::think()
 				if (pending_batches > 0)
 				{
 					bool block = false;
-					if (root_node.value_n_sum < 10000)
+					if (root_node.value_n_sum < single_thread_until)
 					{
 						// 探索回数が少ないうちに複数のバッチを評価待ちにすると、重複が多くなりバイアスが大きくなる
 						block = true;

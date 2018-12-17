@@ -411,7 +411,8 @@
 
 #ifdef USER_ENGINE
 #define ENGINE_NAME "YaneuraOu user engine"
-#define EVAL_MATERIAL
+// #define EVAL_MATERIAL
+#define EVAL_KPPT // 比較実験用。評価値をKPPTのものに置き換える。
 #define USE_SEE
 #define USE_SFEN_PACKER
 #define USE_ENTERING_KING_WIN

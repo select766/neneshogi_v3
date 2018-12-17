@@ -41,6 +41,9 @@ public:
 	float input_array[85 * 9 * 9];//TODO 盤面表現により変わるので最大サイズでとりあえず確保
 	uint16_t n_moves;
 	dnn_move_index move_indices[MAX_MOVES];
+#ifdef EVAL_KPPT
+	int16_t static_value;
+#endif
 };
 
 class dnn_result_obj
