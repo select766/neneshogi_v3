@@ -8,7 +8,7 @@
 
 // 思考エンジンのバージョンとしてUSIプロトコルの"usi"コマンドに応答するときの文字列。
 // ただし、この値を数値として使用することがあるので数値化できる文字列にしておく必要がある。
-#define ENGINE_VERSION "4.82"
+#define ENGINE_VERSION "4.83"
 
 // --------------------
 // コンパイル時の設定
@@ -956,6 +956,9 @@ namespace USI
 
 		// 起動時に設定を代入する。
 		void operator<<(const Option&);
+
+		// idxの値を変えずに上書きする
+		void overwrite(const Option&);
 
 		// s64,bool型への暗黙の変換子
 		operator s64() const {
