@@ -1,4 +1,4 @@
-﻿// 詰将棋探索、mcts async内で使われるように改造。
+﻿// 詰将棋探索、mate-search.cppをMCTS Engineと組み合わせて使われるように改造。
 
 #include "../../shogi.h"
 
@@ -62,13 +62,18 @@ using namespace Search;
 
 namespace MateEngine
 {
+	// 不詰を意味する無限大を意味するPn,Dnの値。
+	static const constexpr uint32_t kInfinitePnDn = 100000000;
 
-	static const constexpr int kInfinitePnDn = 100000000;
-	// static const constexpr int kMaxDepth = MAX_PLY;
+	// 最大深さ(これだけしかスタックとか確保していない)
+	// static const constexpr uint16_t kMaxDepth = MAX_PLY;
+
+	// 正確なPVを返すときのUsiOptionで使うnameの文字列。
+	static const constexpr char* kMorePreciseMatePv = "MorePreciseMatePv";
 
 
 	// TODO(tanuki-): ネガマックス法的な書き方に変更する
-	void MateSearchForMCTS::DFPNwithTCA(Position& n, int thpn, int thdn, bool inc_flag, bool or_node, int depth) {
+	void MateSearchForMCTS::DFPNwithTCA(Position& n, uint32_t thpn, uint32_t thdn, bool inc_flag, bool or_node, uint16_t depth, Color root_color) {
 		if (Threads.stop.load(std::memory_order_relaxed)) {
 			return;
 		}
@@ -78,7 +83,7 @@ namespace MateEngine
 		//	sync_cout << "info string nodes_searched=" << nodes_searched << sync_endl;
 		//}
 
-		auto& entry = transposition_table.LookUp(n);
+		auto& entry = transposition_table.LookUp(n, root_color);
 
 		if (depth > max_depth) {
 			entry.pn = kInfinitePnDn;
@@ -95,6 +100,58 @@ namespace MateEngine
 			entry.dn = kInfinitePnDn;
 			entry.minimum_distance = std::min(entry.minimum_distance, depth);
 			return;
+		}
+
+		// 千日手のチェック
+		// 対局規定（抄録）｜よくある質問｜日本将棋連盟 https://www.shogi.or.jp/faq/taikyoku-kitei.html
+		// 第8条 反則
+		// 7. 連続王手の千日手とは、同一局面が４回出現した一連の手順中、片方の手が
+		// すべて王手だった場合を指し、王手を続けた側がその時点で負けとなる。
+		// 従って開始局面により、連続王手の千日手成立局面が王手をかけた状態と
+		// 王手を解除した状態の二つのケースがある。 （※）
+		// （※）は平成25年10月1日より暫定施行。
+		auto draw_type = n.is_repetition(n.game_ply());
+		switch (draw_type) {
+		case REPETITION_WIN:
+			// 連続王手の千日手による勝ち
+			if (or_node) {
+				// ここは通らないはず
+				entry.pn = 0;
+				entry.dn = kInfinitePnDn;
+				entry.minimum_distance = std::min(entry.minimum_distance, depth);
+			}
+			else {
+				entry.pn = kInfinitePnDn;
+				entry.dn = 0;
+				entry.minimum_distance = std::min(entry.minimum_distance, depth);
+			}
+			return;
+
+		case REPETITION_LOSE:
+			// 連続王手の千日手による負け
+			if (or_node) {
+				entry.pn = kInfinitePnDn;
+				entry.dn = 0;
+				entry.minimum_distance = std::min(entry.minimum_distance, depth);
+			}
+			else {
+				// ここは通らないはず
+				entry.pn = 0;
+				entry.dn = kInfinitePnDn;
+				entry.minimum_distance = std::min(entry.minimum_distance, depth);
+			}
+			return;
+
+		case REPETITION_DRAW:
+			// 普通の千日手
+			// ここは通らないはず
+			entry.pn = kInfinitePnDn;
+			entry.dn = 0;
+			entry.minimum_distance = std::min(entry.minimum_distance, depth);
+			return;
+
+		default:
+			break;
 		}
 
 		MovePicker move_picker(n, or_node);
@@ -134,7 +191,7 @@ namespace MateEngine
 			for (const auto& move : move_picker) {
 				// unproven old childの定義はminimum distanceがこのノードよりも小さいノードだと理解しているのだけど、
 				// 合っているか自信ない
-				const auto& child_entry = transposition_table.LookUpChildEntry(n, move);
+				const auto& child_entry = transposition_table.LookUpChildEntry(n, move, root_color);
 				if (entry.minimum_distance > child_entry.minimum_distance &&
 					child_entry.pn != kInfinitePnDn &&
 					child_entry.dn != kInfinitePnDn) {
@@ -148,7 +205,7 @@ namespace MateEngine
 				entry.pn = kInfinitePnDn;
 				entry.dn = 0;
 				for (const auto& move : move_picker) {
-					const auto& child_entry = transposition_table.LookUpChildEntry(n, move);
+					const auto& child_entry = transposition_table.LookUpChildEntry(n, move, root_color);
 					entry.pn = std::min(entry.pn, child_entry.pn);
 					entry.dn += child_entry.dn;
 				}
@@ -158,7 +215,7 @@ namespace MateEngine
 				entry.pn = 0;
 				entry.dn = kInfinitePnDn;
 				for (const auto& move : move_picker) {
-					const auto& child_entry = transposition_table.LookUpChildEntry(n, move);
+					const auto& child_entry = transposition_table.LookUpChildEntry(n, move, root_color);
 					entry.pn += child_entry.pn;
 					entry.dn = std::min(entry.dn, child_entry.dn);
 				}
@@ -199,14 +256,14 @@ namespace MateEngine
 			int thdn_child;
 			if (or_node) {
 				// ORノードでは最も証明数が小さい = 玉の逃げ方の個数が少ない = 詰ましやすいノードを選ぶ
-				int best_pn = kInfinitePnDn;
-				int second_best_pn = kInfinitePnDn;
-				int best_dn = 0;
-				int best_num_search = INT_MAX;
+				uint32_t best_pn = kInfinitePnDn;
+				uint32_t second_best_pn = kInfinitePnDn;
+				uint32_t best_dn = 0;
+				uint32_t best_num_search = UINT32_MAX;
 				for (const auto& move : move_picker) {
-					const auto& child_entry = transposition_table.LookUpChildEntry(n, move);
+					const auto& child_entry = transposition_table.LookUpChildEntry(n, move, root_color);
 					if (child_entry.pn < best_pn ||
-						child_entry.pn == best_pn && best_num_search > child_entry.num_searched) {
+						(child_entry.pn == best_pn && best_num_search > child_entry.num_searched)) {
 						second_best_pn = best_pn;
 						best_pn = child_entry.pn;
 						best_dn = child_entry.dn;
@@ -223,14 +280,14 @@ namespace MateEngine
 			}
 			else {
 				// ANDノードでは最も反証数の小さい = 王手の掛け方の少ない = 不詰みを示しやすいノードを選ぶ
-				int best_dn = kInfinitePnDn;
-				int second_best_dn = kInfinitePnDn;
-				int best_pn = 0;
-				int best_num_search = INT_MAX;
+				uint32_t best_dn = kInfinitePnDn;
+				uint32_t second_best_dn = kInfinitePnDn;
+				uint32_t best_pn = 0;
+				uint32_t best_num_search = UINT32_MAX;
 				for (const auto& move : move_picker) {
-					const auto& child_entry = transposition_table.LookUpChildEntry(n, move);
+					const auto& child_entry = transposition_table.LookUpChildEntry(n, move, root_color);
 					if (child_entry.dn < best_dn ||
-						child_entry.dn == best_dn && best_num_search > child_entry.num_searched) {
+						(child_entry.dn == best_dn && best_num_search > child_entry.num_searched)) {
 						second_best_dn = best_dn;
 						best_dn = child_entry.dn;
 						best_pn = child_entry.pn;
@@ -247,14 +304,14 @@ namespace MateEngine
 
 			StateInfo state_info;
 			n.do_move(best_move, state_info);
-			DFPNwithTCA(n, thpn_child, thdn_child, inc_flag, !or_node, depth + 1);
+			DFPNwithTCA(n, thpn_child, thdn_child, inc_flag, !or_node, depth + 1, root_color);
 			n.undo_move(best_move);
 		}
 	}
 
 	// 詰み手順を1つ返す
 	// 最短の詰み手順である保証はない
-	bool MateSearchForMCTS::dfs(bool or_node, Position& pos, std::vector<Move>& moves, std::unordered_set<Key>& visited) {
+	bool MateSearchForMCTS::SearchMatePvFast(bool or_node, Color root_color, Position& pos, std::vector<Move>& moves, std::unordered_set<Key>& visited) {
 		// 一度探索したノードを探索しない
 		if (visited.find(pos.key()) != visited.end()) {
 			return false;
@@ -279,10 +336,10 @@ namespace MateEngine
 			return true;
 		}
 
-		const auto& entry = transposition_table.LookUp(pos);
+		const auto& entry = transposition_table.LookUp(pos, root_color);
 
 		for (const auto& move : move_picker) {
-			const auto& child_entry = transposition_table.LookUpChildEntry(pos, move);
+			const auto& child_entry = transposition_table.LookUpChildEntry(pos, move, root_color);
 			if (child_entry.pn != 0) {
 				continue;
 			}
@@ -290,7 +347,7 @@ namespace MateEngine
 			StateInfo state_info;
 			pos.do_move(move, state_info);
 			moves.push_back(move);
-			if (dfs(!or_node, pos, moves, visited)) {
+			if (SearchMatePvFast(!or_node, root_color, pos, moves, visited)) {
 				pos.undo_move(move);
 				return true;
 			}
@@ -299,6 +356,111 @@ namespace MateEngine
 		}
 
 		return false;
+	}
+
+
+	// 詰み手順を1つ返す
+	// df-pn探索ルーチンが探索したノードの中で、攻め側からみて最短、受け側から見て最長の手順を返す
+	// SearchMatePvFast()に比べて遅い
+	// df-pn探索ルーチンが詰将棋の詰み手順として正規の手順を探索していない場合、
+	// このルーチンも正規の詰み手順を返さない
+	// (詰み手順は返すが詰将棋の詰み手順として正規のものである保証はない)
+	// or_node ORノード=攻め側の手番の場合はtrue、そうでない場合はfalse
+	// pos 盤面
+	// memo 過去に探索した盤面のキーと探索状況のmap
+	// return 詰みまでの手数、詰みの局面は0、ループがある場合はkLoop、不詰みの場合はkNotMated
+	int MateSearchForMCTS::SearchMatePvMorePrecise(bool or_node, Color root_color, Position& pos, std::unordered_map<Key, MateState>& memo) {
+		// 過去にこのノードを探索していないか調べる
+		auto key = pos.key();
+		if (memo.find(key) != memo.end()) {
+			auto& mate_state = memo[key];
+			if (mate_state.num_moves_to_mate == kSearching) {
+				// 読み筋がループしている
+				return kLoop;
+			}
+			else if (mate_state.num_moves_to_mate == kNotMate) {
+				return kNotMate;
+			}
+			else {
+				return mate_state.num_moves_to_mate;
+			}
+		}
+		auto& mate_state = memo[key];
+
+		auto mate1ply = pos.mate1ply();
+		if (or_node && !pos.in_check() && mate1ply) {
+			mate_state.num_moves_to_mate = 1;
+			mate_state.move_to_mate = mate1ply;
+
+			// 詰みの局面をメモしておく
+			StateInfo state_info = {};
+			pos.do_move(mate1ply, state_info);
+			auto& mate_state_mated = memo[pos.key()];
+			mate_state_mated.num_moves_to_mate = 0;
+			pos.undo_move(mate1ply);
+			return 1;
+		}
+
+		MovePicker move_picker(pos, or_node);
+		if (move_picker.empty()) {
+			if (or_node) {
+				// 攻め側にもかかわらず王手が続かなかった
+				// dfpnで弾いているため、ここを通ることはないはず
+				mate_state.num_moves_to_mate = kNotMate;
+				return kNotMate;
+			}
+			else {
+				// 受け側にもかかわらず玉が逃げることができなかった
+				// 詰み
+				mate_state.num_moves_to_mate = 0;
+				return 0;
+			}
+		}
+
+		auto best_num_moves_to_mate = or_node ? INT_MAX : INT_MIN;
+		auto best_move_to_mate = Move::MOVE_NONE;
+		const auto& entry = transposition_table.LookUp(pos, root_color);
+
+		for (const auto& move : move_picker) {
+			const auto& child_entry = transposition_table.LookUpChildEntry(pos, move, root_color);
+			if (child_entry.pn != 0) {
+				continue;
+			}
+
+			StateInfo state_info;
+			pos.do_move(move, state_info);
+			int num_moves_to_mate_candidate = SearchMatePvMorePrecise(!or_node, root_color, pos, memo);
+			pos.undo_move(move);
+
+			if (num_moves_to_mate_candidate < 0) {
+				continue;
+			}
+			else if (or_node) {
+				// ORノード=攻め側の場合は最短手順を選択する
+				if (best_num_moves_to_mate > num_moves_to_mate_candidate) {
+					best_num_moves_to_mate = num_moves_to_mate_candidate;
+					best_move_to_mate = move;
+				}
+			}
+			else {
+				// ANDノード=受け側の場合は最長手順を選択する
+				if (best_num_moves_to_mate < num_moves_to_mate_candidate) {
+					best_num_moves_to_mate = num_moves_to_mate_candidate;
+					best_move_to_mate = move;
+				}
+			}
+		}
+
+		if (best_num_moves_to_mate == INT_MAX || best_num_moves_to_mate == INT_MIN) {
+			mate_state.num_moves_to_mate = kNotMate;
+			return kNotMate;
+		}
+		else {
+			ASSERT_LV3(best_num_moves_to_mate >= 0);
+			mate_state.num_moves_to_mate = best_num_moves_to_mate + 1;
+			mate_state.move_to_mate = best_move_to_mate;
+			return best_num_moves_to_mate + 1;
+		}
 	}
 
 	// 詰将棋探索のエントリポイント
@@ -311,16 +473,14 @@ namespace MateEngine
 		transposition_table.NewSearch();
 
 
-		DFPNwithTCA(r, kInfinitePnDn, kInfinitePnDn, false, true, 0);
-		const auto& entry = transposition_table.LookUp(r);
+		Color root_color = r.side_to_move();
+		DFPNwithTCA(r, kInfinitePnDn, kInfinitePnDn, false, true, 0, root_color);
+		const auto& entry = transposition_table.LookUp(r, root_color);
 
-		if (moves != nullptr)
-		{
-			std::unordered_set<Key> visited;
-			dfs(true, r, *moves, visited);
-		}
-
-		return entry.pn == 0 && entry.dn == kInfinitePnDn;//詰む条件
+		// Options[kMorePreciseMatePv]==true 側は未実装
+		std::unordered_set<Key> visited;
+		SearchMatePvFast(true, root_color, r, *moves, visited);
+		return !moves->empty();
 	}
 
 	void MateSearchForMCTS::init(int64_t hash_size_mb, int max_depth) {
