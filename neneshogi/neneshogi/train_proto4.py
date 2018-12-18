@@ -125,7 +125,7 @@ def create_shogi_model(board_shape, move_dim, model_config, loss_config, restore
     }
 
 
-def shogi_train_and_eval(solver_config, model_config, workdir, restore):
+def shogi_train_and_eval(solver_config, model_config, workdir, restore, finetune):
     stopper = MutexStopper()
     epochs = solver_config["epoch"]
     ds_train_config = solver_config["dataset"]["train"]
@@ -152,8 +152,9 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
                                     "nene_{}_{}.cmf".format(model_config["format_board"], model_config["format_move"]))
         if not os.path.exists(restore_path):
             restore_path = None
+    # finetuneはモデルの読み込みには影響するがTrainManagerには影響しない
     network = create_shogi_model(train_source.board_shape, train_source.move_dim, model_config, solver_config["loss"],
-                                 restore_path)
+                                 finetune or restore_path)
     lr_schedule = C.learning_parameter_schedule(1e-4)
     mm_schedule = C.learners.momentum_schedule(0.9)
     learner = C.learners.momentum_sgd(network['output'].parameters, lr_schedule, mm_schedule, unit_gain=False,
@@ -236,6 +237,7 @@ def shogi_train_and_eval(solver_config, model_config, workdir, restore):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("workdir")
+    parser.add_argument("--finetune", help="fine tuning from this model file")
     parser.add_argument('-r', '--restart',
                         help='Indicating whether to restart from scratch (instead of restart from checkpoint file by default)',
                         action='store_true')
@@ -254,6 +256,7 @@ if __name__ == '__main__':
     model_config = util.yaml_load(os.path.join(args.workdir, "model.yaml"))
     neneshogi.log.init(os.path.join(args.workdir, "train.log"))
     try:
-        shogi_train_and_eval(solver_config, model_config, args.workdir, restore=not args.restart)
+        shogi_train_and_eval(solver_config, model_config, args.workdir, restore=not args.restart,
+                             finetune=args.finetune)
     except Exception as ex:
         logger.exception("Aborted with exception")
