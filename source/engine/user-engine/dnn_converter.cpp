@@ -6,7 +6,14 @@ DNNConverter::DNNConverter(int format_board, int format_move) : format_board(for
 
 vector<int> DNNConverter::board_shape() const
 {
-	return vector<int>{85, 9, 9};
+	switch (format_board)
+	{
+	case 0:
+		return vector<int>{85, 9, 9};
+	case 1:
+		return vector<int>{62+57, 9, 9};
+	}
+	return vector<int>();
 }
 
 vector<int> DNNConverter::move_shape() const
@@ -37,6 +44,19 @@ static void fill_channel_range(float* buf, int ch_begin, int ch_end, float value
 }
 
 void DNNConverter::get_board_array(const Position & pos, float *buf) const
+{
+	switch (format_board)
+	{
+	case 0:
+		get_board_array_0(pos, buf);
+		break;
+	case 1:
+		get_board_array_1(pos, buf);
+		break;
+	}
+}
+
+void DNNConverter::get_board_array_0(const Position & pos, float *buf) const
 {	/*
 	* Ponanza (SDT5)の資料を参考に作成
 	* 盤上の駒14チャンネル *二人
@@ -105,6 +125,148 @@ void DNNConverter::get_board_array(const Position & pos, float *buf) const
 
 	fill_channel(buf, 84, (float)pos.in_check());
 }
+
+void DNNConverter::get_board_array_1(const Position & pos, float *buf) const
+{
+	/*
+	* dlshogi(201812時点)を参考に作成
+	* 駒の配置系62ch＋持ち駒系57ch。持ち駒系は、空間方向は全部同じ値。
+	* 駒の配置系：
+	* 盤上の駒14チャンネル *二人
+	* あるマスに効いている駒の種類14 *二人
+	* あるマスに効いている駒の数（最大3ch、数に応じた数のチャンネルを1で埋める）3 *二人
+	* 持ち駒は、枚数分のチャンネル(金なら4)を用意して1で埋めていく(歩は最大8枚)
+	* 歩*8,香車*4,桂馬*4,銀*4,角*2,飛車*2,金*4=28*二人
+	* 王手かどうか 1次元
+	* 後手番の際は、盤面・駒の所属を反転して先手番の状態にする。
+	* 手数は現在入れていない。Position.set_from_packed_sfenに要素がないため。
+	*/
+	fill_channel_range(buf, 0, 62+57, 0.0F);//ゼロクリア
+	if (pos.side_to_move() == BLACK) {
+		for (Square i = SQ_ZERO; i < SQ_NB; i++) {
+			Piece p = pos.piece_on(i);
+			int ch;
+			if (p != PIECE_ZERO) {
+				if (color_of(p) == BLACK) {
+					ch = p - B_PAWN;
+				}
+				else {
+					ch = p - W_PAWN + 14;
+				}
+				buf[ch * SQ_NB + i] = 1;//駒種 0~27ch
+			}
+			// あるマスに効いている駒がある座標を列挙、その駒種に対応したチャンネルを埋める
+			Bitboard attackers = pos.attackers_to(i);
+			int attacker_cnt[2] = { 0, 0 };
+			while (attackers)
+			{
+				Square attacker_pos = attackers.pop();
+				Piece pa = pos.piece_on(attacker_pos);
+				if (color_of(pa) == BLACK) {
+					ch = pa - B_PAWN + 28;
+					attacker_cnt[0]++;
+				}
+				else {
+					ch = pa - W_PAWN + 42;
+					attacker_cnt[1]++;
+				}
+				buf[ch * SQ_NB + i] = 1;//効いている駒種 28~55ch
+			}
+			// 手番ごとの利きの数 56~61ch
+			for (int ai = 0; ai < 3; ai++)
+			{
+				if (attacker_cnt[0] > ai)
+				{
+					ch = 56 + ai;
+					buf[ch * SQ_NB + i] = 1;
+				}
+			}
+			for (int ai = 0; ai < 3; ai++)
+			{
+				if (attacker_cnt[1] > ai)
+				{
+					ch = 59 + ai;
+					buf[ch * SQ_NB + i] = 1;
+				}
+			}
+		}
+	}
+	else {
+		for (Square i = SQ_ZERO; i < SQ_NB; i++) {
+			Piece p = pos.piece_on(i);
+			int ch;
+			if (p != PIECE_ZERO) {
+				// 先手後手入れ替え+座標回転
+				if (color_of(p) == BLACK) {
+					ch = p - B_PAWN + 14;
+				}
+				else {
+					ch = p - W_PAWN;
+				}
+				buf[ch * SQ_NB + Inv(i)] = 1;//駒種 0~27ch
+			}
+			// あるマスに効いている駒がある座標を列挙、その駒種に対応したチャンネルを埋める
+			Bitboard attackers = pos.attackers_to(i);
+			int attacker_cnt[2] = { 0, 0 };
+			while (attackers)
+			{
+				Square attacker_pos = attackers.pop();
+				Piece pa = pos.piece_on(attacker_pos);
+				if (color_of(pa) == BLACK) {
+					ch = pa - B_PAWN + 42;
+					attacker_cnt[1]++;
+				}
+				else {
+					ch = pa - W_PAWN + 28;
+					attacker_cnt[0]++;
+				}
+				buf[ch * SQ_NB + Inv(i)] = 1;//効いている駒種 28~55ch
+			}
+			// 手番ごとの利きの数 56~61ch
+			for (int ai = 0; ai < 3; ai++)
+			{
+				if (attacker_cnt[0] > ai)
+				{
+					ch = 56 + ai;
+					buf[ch * SQ_NB + Inv(i)] = 1;
+				}
+			}
+			for (int ai = 0; ai < 3; ai++)
+			{
+				if (attacker_cnt[1] > ai)
+				{
+					ch = 59 + ai;
+					buf[ch * SQ_NB + Inv(i)] = 1;
+				}
+			}
+		}
+
+	}
+
+	int ch_ofs = 62;
+	Hand hands[2] = { pos.hand_of(pos.side_to_move()), pos.hand_of(~pos.side_to_move()) };
+	for (int i = 0; i < 2; i++) {
+		Hand hand = hands[i];
+		//歩は最大8枚
+		fill_channel_range(buf, ch_ofs, ch_ofs + (std::min)(hand_count(hand, PAWN), 8), 1.0);
+		ch_ofs += 8;
+		fill_channel_range(buf, ch_ofs, ch_ofs + hand_count(hand, LANCE), 1.0);
+		ch_ofs += 4;
+		fill_channel_range(buf, ch_ofs, ch_ofs + hand_count(hand, KNIGHT), 1.0);
+		ch_ofs += 4;
+		fill_channel_range(buf, ch_ofs, ch_ofs + hand_count(hand, SILVER), 1.0);
+		ch_ofs += 4;
+		fill_channel_range(buf, ch_ofs, ch_ofs + hand_count(hand, BISHOP), 1.0);
+		ch_ofs += 2;
+		fill_channel_range(buf, ch_ofs, ch_ofs + hand_count(hand, ROOK), 1.0);
+		ch_ofs += 2;
+		fill_channel_range(buf, ch_ofs, ch_ofs + hand_count(hand, GOLD), 1.0);
+		ch_ofs += 4;
+	}
+
+	fill_channel(buf, 62+56, (float)pos.in_check());
+}
+
 
 int DNNConverter::get_move_index(const Position & pos, Move move) const
 {
