@@ -303,6 +303,7 @@ static atomic<std::chrono::seconds> gpu_lock_timeout(std::chrono::seconds(0));
 static std::thread* gpu_lock_thread = nullptr;
 static int print_status = 0;
 static int single_thread_until = 0;
+static bool use_search_cut = false;
 
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
 void user_test(Position& pos_, istringstream& is)
@@ -364,6 +365,7 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["block_queue_length"] << Option(2, 1, 64);
 	o["print_status"] << Option(0, 0, 1000000);//指定されたノード数探索するごとに探索状態を表示。
 	o["single_thread_until"] << Option(10000, 0, 10000000);
+	o["use_search_cut"] << Option(true);//指し手変化がなさそうな場合に早めに探索を終了する。
 }
 
 // GPUをロックするスレッド。
@@ -488,6 +490,7 @@ void  Search::clear()
 	tree_config.clear_table_before_search = (bool)Options["clear_table"];
 	print_status = (int)Options["print_status"];
 	single_thread_until = (int)Options["single_thread_until"];
+	use_search_cut = (bool)Options["use_search_cut"];
 
 #ifdef USE_MCTS_MATE_ENGINE
 	if (mate_search_root == nullptr)
@@ -1105,6 +1108,32 @@ void select_best_move(Position &rootPos, UctNode &root_node, Move &bestMove, Mov
 	}
 }
 
+bool check_search_cut(UctNode &root_node, int elapsed_time, int scheduled_time, int eval_count_this_search)
+{
+	// 指し手が今後変化しなさそうな場合に探索を打ち切るかどうか判定する。
+
+	// 予想される、今後探索できそうなノード数
+	double reamining_nodes = (double)eval_count_this_search / max(elapsed_time, 1) * (scheduled_time - elapsed_time);
+
+	if (root_node.n_children == 1)
+	{
+		// そもそも指し手が1個しかないので、すぐ終わっていい。
+		return true;
+	}
+	// 自明な枝刈り: top1のノード数-top2のノード数>remaining_nodes なら、思考時間を使っても指し手変化の可能性がない。
+	int value_n_copy[MAX_UCT_CHILDREN];
+	memcpy(value_n_copy, root_node.value_n, sizeof(value_n_copy));
+	// 降順ソート
+	std::sort(&value_n_copy[0], &value_n_copy[root_node.n_children], std::greater<int>());
+	int n_diff = value_n_copy[0] - value_n_copy[1];
+	if (n_diff > reamining_nodes)
+	{
+		sync_cout << "info string search cut on top1-top2 > remaining_nodes" << sync_endl;
+		return true;
+	}
+	return false;
+}
+
 std::atomic_bool in_search_time;
 
 // 探索開始時に呼び出される。
@@ -1200,9 +1229,10 @@ void MainThread::think()
 			});
 			// 探索時間内は木構造探索をする。同時に評価結果を回収。時間切れになったらflushして投入済み評価バッチを回収。
 			bool no_more_search = false;
+			bool search_cut = false;
 			while (true)
 			{
-				if (in_search_time && (n_select < max_select || Threads.ponder))  // Ponder中は指定ノード数を超えても探索する
+				if (in_search_time && ((n_select < max_select && !search_cut) || Threads.ponder))  // Ponder中は指定ノード数を超えたり中断条件を満たしても探索する
 				{
 					dnn_table_index path;
 					path.path_length = 1;
@@ -1253,6 +1283,12 @@ void MainThread::think()
 							next_pv_time += pv_interval;
 						}
 					}
+				}
+
+				if (use_search_cut && eval_count_this_search > 1000 && !search_cut)
+				{
+					// eval_count_this_search > 1000は、単に初期でカットしないというだけでなく、npsの推定精度のためでもある
+					search_cut = check_search_cut(root_node, Time.elapsed(), Time.optimum(), eval_count_this_search);
 				}
 
 				if (print_status > 0 && next_status_print_nodes <= root_node.value_n_sum)
