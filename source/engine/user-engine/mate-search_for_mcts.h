@@ -254,6 +254,7 @@ namespace MateEngine
 		void DFPNwithTCA(Position& n, uint32_t thpn, uint32_t thdn, bool inc_flag, bool or_node, uint16_t depth, Color root_color);
 		bool SearchMatePvFast(bool or_node, Color root_color, Position& pos, std::vector<Move>& moves, std::unordered_set<Key>& visited);
 		int SearchMatePvMorePrecise(bool or_node, Color root_color, Position& pos, std::unordered_map<Key, MateState>& memo);
+		void get_pv_from_search(Position &pos, std::unordered_map<Key, MateState>& memo, vector<Move> &moves);
 	public:
 		bool dfpn(Position& r, std::vector<Move> *moves);
 		void init(int64_t hash_size_mb, int max_depth);

@@ -463,6 +463,22 @@ namespace MateEngine
 		}
 	}
 
+	void MateSearchForMCTS::get_pv_from_search(Position &pos, std::unordered_map<Key, MateState>& memo, vector<Move> &moves)
+	{
+		// 局面におけるbestmoveで進め、再帰的に詰みまでの筋を収集する
+		auto& mate_state = memo[pos.key()];
+		if (mate_state.num_moves_to_mate <= 0)
+		{
+			return;
+		}
+		auto move = mate_state.move_to_mate;
+		moves.push_back(move);
+		StateInfo state_info;
+		pos.do_move(move, state_info);
+		get_pv_from_search(pos, memo, moves);
+		pos.undo_move(move);
+	}
+
 	// 詰将棋探索のエントリポイント
 	bool MateSearchForMCTS::dfpn(Position& r, std::vector<Move> *moves) {
 		if (r.in_check()) {
@@ -477,10 +493,26 @@ namespace MateEngine
 		DFPNwithTCA(r, kInfinitePnDn, kInfinitePnDn, false, true, 0, root_color);
 		const auto& entry = transposition_table.LookUp(r, root_color);
 
-		// Options[kMorePreciseMatePv]==true 側は未実装
+#if 1
+		// SearchMatePvMorePreciseを使う版
+		std::unordered_map<Key, MateState> memo;
+		if (SearchMatePvMorePrecise(true, root_color, r, memo) > 0)
+		{
+			get_pv_from_search(r, memo, *moves);
+			return true;
+		}
+		else
+		{
+			// 詰まない(or ルート局面が詰み)
+			return false;
+		}
+#else
+		// SearchMatePvFastを使う版
+		// しばしば楽観的過ぎたりmate+2のような表示になったりして何かおかしい
 		std::unordered_set<Key> visited;
 		SearchMatePvFast(true, root_color, r, *moves, visited);
 		return !moves->empty();
+#endif
 	}
 
 	void MateSearchForMCTS::init(int64_t hash_size_mb, int max_depth) {
