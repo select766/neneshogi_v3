@@ -88,6 +88,24 @@ void  Search::clear()
 	sync_cout << "info string initialized all dnn threads" << sync_endl;
 }
 
+// 探索に関する統計情報のリセット。思考開始時に呼ぶ。
+static void reset_stats()
+{
+	n_dnn_evaled_batches = 0;
+	n_dnn_evaled_samples = 0;
+}
+
+// 探索に関する統計情報の表示。
+static void display_stats()
+{
+	int d_batches = n_dnn_evaled_batches;
+	int d_samples = n_dnn_evaled_samples;
+	int avg_batchsize = d_samples / std::max(d_batches, 1);
+	sync_cout << "info string DNN stat " << d_batches << " batch, " << d_samples << " samples, "
+		" average bs=" << avg_batchsize << " (" << (avg_batchsize * 100 / batch_size) << "%)"
+		<< sync_endl;
+}
+
 // 探索開始時に呼び出される。
 // この関数内で初期化を終わらせ、slaveスレッドを起動してThread::search()を呼び出す。
 // そのあとslaveスレッドを終了させ、ベストな指し手を返すこと。
@@ -99,6 +117,7 @@ void MainThread::think()
 	//  for (auto th : Threads.slaves) th->wait_for_search_finished();
 	Time.init(Search::Limits, rootPos.side_to_move(), rootPos.game_ply());
 	gpu_lock_extend();
+	reset_stats();
 	Move bestMove = MOVE_RESIGN;
 	if (!rootPos.is_mated())
 	{
@@ -150,6 +169,7 @@ void MainThread::think()
 		bestMove = mcts->get_bestmove(root, rootPos);
 	}
 	sync_cout << "bestmove " << bestMove << sync_endl;
+	display_stats();
 }
 
 // 探索本体。並列化している場合、ここがslaveのエントリーポイント。

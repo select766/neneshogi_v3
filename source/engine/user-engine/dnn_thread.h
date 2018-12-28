@@ -14,6 +14,8 @@ extern float value_temperature;
 extern float value_scale;
 extern std::atomic_int n_dnn_thread_initalized;
 extern int batch_size;
+extern std::atomic_int n_dnn_evaled_samples;
+extern std::atomic_int n_dnn_evaled_batches;
 
 class DeviceModel
 {

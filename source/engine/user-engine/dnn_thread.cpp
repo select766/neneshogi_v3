@@ -11,6 +11,8 @@ float policy_temperature = 1.0;
 float value_temperature = 1.0;
 float value_scale = 1.0;
 std::atomic_int n_dnn_thread_initalized = 0;
+std::atomic_int n_dnn_evaled_samples = 0;
+std::atomic_int n_dnn_evaled_batches = 0;
 
 // CNTKによる評価。
 // なぜか関数を分けないとスタック破壊らしき挙動が起きる。softmax計算がおかしな結果になる等。
@@ -121,6 +123,9 @@ void dnn_thread_main(int worker_idx)
 			// response_queueに送り返す
 			eval_obj.response_queue->push(&eval_obj);
 		}
+
+		n_dnn_evaled_batches.fetch_add(1);
+		n_dnn_evaled_samples.fetch_add((int)item_count);
 		sync_cout << "info string dnn sent back" << sync_endl;
 	}
 
