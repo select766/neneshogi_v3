@@ -18,6 +18,9 @@ static int root_mate_thread_id = -1;//ルート局面からの詰み探索をす
 static vector<Move> root_mate_pv;
 static atomic_bool root_mate_found = false;//ルート局面からの詰み探索で詰みがあった場合
 
+// 定跡の指し手を選択するモジュール
+static Book::BookMoveSelector book;
+
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
 void user_test(Position& pos_, istringstream& is)
 {
@@ -28,6 +31,9 @@ void user_test(Position& pos_, istringstream& is)
 // USI::init()のなかからコールバックされる。
 void USI::extra_option(USI::OptionsMap & o)
 {
+	//   定跡設定
+	book.init(o);
+
 	o["PvInterval"] << Option(300, 0, 100000);//PV表示間隔[ms]
 	o["BatchSize"] << Option(16, 1, 65536);
 	o["GPU"] << Option("-1");//使用するGPU番号(-1==CPU)、カンマ区切りで複数指定可能
@@ -132,6 +138,12 @@ void  Search::clear()
 		root_mate_thread_id = -1;
 	}
 
+	// -----------------------
+	//   定跡の読み込み
+	// -----------------------
+
+	book.read_book();
+
 	sync_cout << "info string initialized all dnn threads" << sync_endl;
 }
 
@@ -207,7 +219,30 @@ void MainThread::think()
 	reset_stats();
 	Move bestMove = MOVE_RESIGN;
 	Move ponderMove = MOVE_RESIGN;
-	if (!rootPos.is_mated())
+	Move declarationWinMove = rootPos.DeclarationWin();
+	Move bookMove;
+	if ((bookMove = book.probe(rootPos)) != MOVE_NONE)
+	{
+		// 定跡
+		sync_cout << "info string book " << bookMove << sync_endl;
+		bestMove = bookMove;
+		while (Threads.ponder && !Threads.stop)
+		{
+			// ponder中は返してはいけない。
+			sleep(1);
+		}
+	}
+	else if (declarationWinMove != MOVE_NONE)
+	{
+		// 入玉宣言勝ち
+		bestMove = declarationWinMove;
+		while (Threads.ponder && !Threads.stop)
+		{
+			// ponder中は返してはいけない。
+			sleep(1);
+		}
+	}
+	else if (!rootPos.is_mated())
 	{
 		// ルートノードの作成
 		MCTSSearchInfo sei(cvt, request_queue, response_queues[0], nullptr);
