@@ -23,10 +23,10 @@ void user_test(Position& pos_, istringstream& is)
 // USI::init()のなかからコールバックされる。
 void USI::extra_option(USI::OptionsMap & o)
 {
-	o["batch_size"] << Option(16, 1, 65536);
+	o["BatchSize"] << Option(16, 1, 65536);
 	o["GPU"] << Option("-1");//使用するGPU番号(-1==CPU)、カンマ区切りで複数指定可能
-	o["format_board"] << Option(0, 0, 16);//DNNのboard表現形式
-	o["format_move"] << Option(0, 0, 16);//DNNのmove表現形式
+	o["DNNFormatBoard"] << Option(0, 0, 16);//DNNのboard表現形式
+	o["DNNFormatMove"] << Option(0, 0, 16);//DNNのmove表現形式
 	o["LeafMateSearchDepth"] << Option(0, 0, 16);//末端局面での詰み探索深さ(0なら探索しない)
 	o["MCTSHash"] << Option(1024, 1, 1048576);//MCTSのハッシュテーブルサイズ(MB)
 }
@@ -43,14 +43,14 @@ void  Search::clear()
 	request_queue = new MTQueue<dnn_eval_obj*>();
 	int hash_size_mb = (int)Options["MCTSHash"];
 	mcts = new MCTS(MCTSTT::calc_uct_hash_size(hash_size_mb));
-	batch_size = (int)Options["batch_size"];
+	batch_size = (int)Options["BatchSize"];
 
 	sync_cout << "info string initializing dnn threads" << sync_endl;
 	// モデルのロード
 	// 本来はファイル名からフォーマットを推論したい
 	// 将棋所からは日本語WindowsだとオプションがCP932で来る。mbstowcsにそれを認識させ、日本語ファイル名を正しく変換
 	setlocale(LC_ALL, "");
-	int format_board = (int)Options["format_board"], format_move = (int)Options["format_move"];
+	int format_board = (int)Options["DNNFormatBoard"], format_move = (int)Options["DNNFormatMove"];
 	wchar_t model_path[1024];
 	string evaldir = Options["EvalDir"];
 	wchar_t evaldir_w[1024];
