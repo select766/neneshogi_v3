@@ -376,8 +376,9 @@ void MainThread::think()
 		for (Thread* th : Threads)
 			if (th != this)
 				th->wait_for_search_finished();
-		vector<Move> pv = display_pv(root, rootPos);
 		root->pprint();
+		display_stats();
+		vector<Move> pv = display_pv(root, rootPos);
 
 		// 詰み探索が成功していれば、そちらを優先
 		if (root_mate_found)
@@ -404,7 +405,6 @@ void MainThread::think()
 	{
 		sync_cout << "bestmove " << bestMove << sync_endl;
 	}
-	display_stats();
 }
 
 void root_mate_search(Position &rootPos)
