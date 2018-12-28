@@ -17,6 +17,7 @@ static int pv_interval;//PV表示間隔[ms]
 static int root_mate_thread_id = -1;//ルート局面からの詰み探索をするスレッドのid(-1の場合はしない)
 static vector<Move> root_mate_pv;
 static atomic_bool root_mate_found = false;//ルート局面からの詰み探索で詰みがあった場合
+static int nodes_limit = INT_MAX;//探索ノード数の上限
 
 // 定跡の指し手を選択するモジュール
 static Book::BookMoveSelector book;
@@ -62,6 +63,11 @@ void  Search::clear()
 	{
 		//PVの定期的な表示をしない
 		pv_interval = 100000000;
+	}
+	nodes_limit = (int)Options["NodesLimit"];
+	if (nodes_limit <= 0)
+	{
+		nodes_limit = INT_MAX;
 	}
 
 	sync_cout << "info string initializing dnn threads" << sync_endl;
@@ -279,7 +285,7 @@ void MainThread::think()
 
 		int lastPvTime = Time.elapsed();
 		// masterは探索終了タイミングの決定のみ行う
-		while (true)
+		while (!Threads.stop)
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			if (lastPvTime + pv_interval < Time.elapsed())
@@ -288,14 +294,18 @@ void MainThread::think()
 				lastPvTime += pv_interval;
 			}
 
-			if (Threads.stop || (Time.elapsed() >= Time.optimum() && !Threads.ponder))
+			// 探索終了条件判定
+			if (!Threads.ponder)
 			{
-				// 思考時間が来たら、新たな探索は停止する。
-				// ただし、評価途中のものの結果を受け取ってからbestmoveを決める。
 				// Ponder中は探索を止めない。
 				// Ponderが外れた時、Threads.ponder==trueのままThreads.stop==trueとなる
-				Threads.stop = true;
-				break;
+				if (Time.elapsed() >= Time.optimum() || root->value_n_sum > nodes_limit)
+				{
+					// 思考時間が来たら、新たな探索は停止する。
+					// ただし、評価途中のものの結果を受け取ってからbestmoveを決める。
+					// TODO: root->value_n_sum をロックすべき
+					Threads.stop = true;
+				}
 			}
 		}
 
