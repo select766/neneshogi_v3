@@ -209,6 +209,11 @@ UCTNode * MCTS::make_root(Position & pos, MCTSSearchInfo & sei, dnn_eval_obj * e
 	return root;
 }
 
+UCTNode * MCTS::get_root(const Position & pos)
+{
+	return tt->find_entry(pos);
+}
+
 Move MCTS::get_bestmove(UCTNode * root, Position & pos)
 {
 	Move bestMove = MOVE_RESIGN;

@@ -12,6 +12,8 @@ float value_temperature = 1.0;
 float value_scale = 1.0;
 std::atomic_int n_dnn_thread_initalized = 0;
 
+// CNTKによる評価。
+// なぜか関数を分けないとスタック破壊らしき挙動が起きる。softmax計算がおかしな結果になる等。
 static void do_eval(CNTK::FunctionPtr &modelFunc, CNTK::DeviceDescriptor &device, vector<float> &inputData, std::vector<std::vector<float>> &policyData, std::vector<std::vector<float>> &valueData)
 {
 	// Get input variable. The model has only one single input.

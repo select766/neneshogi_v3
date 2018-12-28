@@ -89,6 +89,7 @@ public:
 	// DNNの結果が得られた際のbackup処理
 	void backup_dnn(dnn_eval_obj *eval_info);
 	UCTNode* make_root(Position &pos, MCTSSearchInfo &sei, dnn_eval_obj *eval_info, bool &created);
+	UCTNode* get_root(const Position &pos);
 	Move get_bestmove(UCTNode *root, Position &pos);
 
 	float c_puct;

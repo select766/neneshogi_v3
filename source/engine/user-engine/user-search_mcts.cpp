@@ -120,55 +120,28 @@ void MainThread::think()
 			delete eobj;
 		}
 
-		// 探索を開始
-		int n_put = 0, n_get = 0, leaf_dup = 0;
-		while (!Threads.stop || (n_put != n_get))
+		// slaveスレッドで探索を開始
+		for (Thread* th : Threads)
+			if (th != this)
+				th->start_searching();
+
+		// masterは探索終了タイミングの決定のみ行う
+		while (true)
 		{
-			if (!Threads.stop && (n_put - n_get < batch_size * 2))
-			{
-				// 探索
-				MCTSSearchInfo sei(cvt, request_queue, response_queues[0]);
-				dnn_eval_obj *eobj = new dnn_eval_obj();
-				mcts->search(root, rootPos, sei, eobj);
-				if (sei.put_dnn_eval)
-				{
-					n_put++;
-				}
-				else
-				{
-					delete eobj;
-					if (sei.leaf_dup)
-					{
-						// すでに評価中の局面に到達
-						// 木構造が狭い間に無理にたくさん評価しようとすると訪問回数が異常になるので
-						// ヒューリスティックに、短い時間待機
-						// もっと洗練された方法が欲しい
-						leaf_dup++;
-						std::this_thread::sleep_for(std::chrono::milliseconds(1));
-					}
-				}
-
-			}
-
-			if (true)
-			{
-				dnn_eval_obj *eobj = nullptr;
-				if (response_queues[0]->pop_nb(eobj))
-				{
-					mcts->backup_dnn(eobj);
-					delete eobj;
-					n_get++;
-				}
-			}
-
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			if (Time.elapsed() >= Time.optimum())
 			{
 				// 思考時間が来たら、新たな探索は停止する。
 				// ただし、評価途中のものの結果を受け取ってからbestmoveを決める。
 				Threads.stop = true;
+				break;
 			}
 		}
-		sync_cout << "info string n_put " << n_put << " leaf_dup " << leaf_dup << sync_endl;
+
+		// slaveスレッドが探索を終わるのを待つ
+		for (Thread* th : Threads)
+			if (th != this)
+				th->wait_for_search_finished();
 		root->pprint();
 
 		bestMove = mcts->get_bestmove(root, rootPos);
@@ -181,6 +154,59 @@ void MainThread::think()
 // この関数を呼び出したいときは、Thread::search()とすること。
 void Thread::search()
 {
+	UCTNode *root = mcts->get_root(rootPos);
+	int n_put = 0, n_get = 0, leaf_dup = 0;
+	MTQueue<dnn_eval_obj*> *response_queue = response_queues[thread_id()];
+	while (!Threads.stop || (n_put != n_get))
+	{
+		bool enable_search = !Threads.stop && (n_put - n_get < batch_size * 2);
+		if (enable_search)
+		{
+			// 探索
+			MCTSSearchInfo sei(cvt, request_queue, response_queue);
+			dnn_eval_obj *eobj = new dnn_eval_obj();
+			mcts->search(root, rootPos, sei, eobj);
+			if (sei.put_dnn_eval)
+			{
+				n_put++;
+			}
+			else
+			{
+				delete eobj;
+				if (sei.leaf_dup)
+				{
+					// すでに評価中の局面に到達
+					// 木構造が狭い間に無理にたくさん評価しようとすると訪問回数が異常になるので
+					// ヒューリスティックに、短い時間待機
+					// もっと洗練された方法が欲しい
+					leaf_dup++;
+					std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				}
+			}
+
+		}
+
+		if (true)
+		{
+			dnn_eval_obj *eobj = nullptr;
+			if (enable_search)
+			{
+				response_queue->pop_nb(eobj);
+			}
+			else
+			{
+				// 探索を停止している条件のため、結果が来るまでブロッキング
+				response_queue->pop(eobj);
+			}
+			if (eobj)
+			{
+				mcts->backup_dnn(eobj);
+				delete eobj;
+				n_get++;
+			}
+		}
+	}
+	sync_cout << "info string thread " << thread_id() << " n_put " << n_put << " leaf_dup " << leaf_dup << sync_endl;
 }
 
 #endif // USER_ENGINE_MCTS
