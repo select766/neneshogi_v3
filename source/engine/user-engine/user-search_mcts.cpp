@@ -12,7 +12,11 @@ static MTQueue<dnn_eval_obj*> **response_queues;
 int batch_size;
 static vector<std::thread*> dnn_threads;
 static vector<MateEngine::MateSearchForMCTS*> leaf_mate_searchers;
+static MateEngine::MateSearchForMCTS *root_mate_searcher = nullptr;
 static int pv_interval;//PV表示間隔[ms]
+static int root_mate_thread_id = -1;//ルート局面からの詰み探索をするスレッドのid(-1の場合はしない)
+static vector<Move> root_mate_pv;
+static atomic_bool root_mate_found = false;//ルート局面からの詰み探索で詰みがあった場合
 
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
 void user_test(Position& pos_, istringstream& is)
@@ -31,6 +35,7 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["DNNFormatMove"] << Option(0, 0, 16);//DNNのmove表現形式
 	o["LeafMateSearchDepth"] << Option(0, 0, 16);//末端局面での詰み探索深さ(0なら探索しない)
 	o["MCTSHash"] << Option(1024, 1, 1048576);//MCTSのハッシュテーブルサイズ(MB)
+	o["RootMateSearch"] << Option(false);//ルート局面からの詰み探索専用スレッドを用いるか(Threadsのうちの1つが使われる)
 }
 
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
@@ -112,6 +117,19 @@ void  Search::clear()
 		{
 			leaf_mate_searchers.push_back(nullptr);
 		}
+	}
+
+	// ルート局面からの詰み探索
+	if ((bool)Options["RootMateSearch"])
+	{
+		root_mate_thread_id = threads - 1;//最終スレッドを使う
+		auto ms = new MateEngine::MateSearchForMCTS();
+		ms->init(128, MAX_PLY);
+		root_mate_searcher = ms;
+	}
+	else
+	{
+		root_mate_thread_id = -1;
 	}
 
 	sync_cout << "info string initialized all dnn threads" << sync_endl;
@@ -219,6 +237,7 @@ void MainThread::think()
 		}
 
 		// slaveスレッドで探索を開始
+		root_mate_found = false;
 		for (Thread* th : Threads)
 			if (th != this)
 				th->start_searching();
@@ -251,6 +270,14 @@ void MainThread::think()
 				th->wait_for_search_finished();
 		vector<Move> pv = display_pv(root, rootPos);
 		root->pprint();
+
+		// 詰み探索が成功していれば、そちらを優先
+		if (root_mate_found)
+		{
+			sync_cout << "info string override move by mate search" << sync_endl;
+			pv = root_mate_pv;
+		}
+
 		if (pv.size() >= 1)
 		{
 			bestMove = pv[0];
@@ -272,11 +299,35 @@ void MainThread::think()
 	display_stats();
 }
 
+void root_mate_search(Position &rootPos)
+{
+	root_mate_pv.clear();
+	if (root_mate_searcher->dfpn(rootPos, &root_mate_pv))
+	{
+		root_mate_found = true;
+		sync_cout << "info string root MATE FOUND!" << sync_endl;
+		sync_cout << "info depth " << root_mate_pv.size() << " score mate " << root_mate_pv.size() << " pv";
+		for (auto m : root_mate_pv)
+		{
+			cout << " " << m;
+		}
+		cout << sync_endl;
+	}
+	else
+	{
+		sync_cout << "info string NO root mate" << sync_endl;
+	}
+}
+
 // 探索本体。並列化している場合、ここがslaveのエントリーポイント。
 // MainThread::search()はvirtualになっていてthink()が呼び出されるので、MainThread::think()から
 // この関数を呼び出したいときは、Thread::search()とすること。
 void Thread::search()
 {
+	if (thread_id() == root_mate_thread_id)
+	{
+		return root_mate_search(rootPos);
+	}
 	UCTNode *root = mcts->get_root(rootPos);
 	int n_put = 0, n_get = 0, leaf_dup = 0, leaf_mate_search_found = 0;
 	MTQueue<dnn_eval_obj*> *response_queue = response_queues[thread_id()];
