@@ -63,11 +63,20 @@ private:
 class MCTSSearchInfo
 {
 public:
+	// 置換表のロック中か
 	bool has_tt_lock;
+	// DNN評価をリクエストしたかどうか
 	bool put_dnn_eval;
+	// 探索結果が現在DNN評価途中の局面だったかどうか
+	bool leaf_dup;
 	DNNConverter *cvt;
 	MTQueue<dnn_eval_obj*> *request_queue;
 	MTQueue<dnn_eval_obj*> *response_queue;
+
+	MCTSSearchInfo(DNNConverter *cvt, MTQueue<dnn_eval_obj*> *request_queue, MTQueue<dnn_eval_obj*> *response_queue)
+		: cvt(cvt), request_queue(request_queue), response_queue(response_queue), has_tt_lock(false), put_dnn_eval(false), leaf_dup(false)
+	{
+	}
 };
 
 // MCTSの実装

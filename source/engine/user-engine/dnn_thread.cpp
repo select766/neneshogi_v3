@@ -12,6 +12,35 @@ float value_temperature = 1.0;
 float value_scale = 1.0;
 std::atomic_int n_dnn_thread_initalized = 0;
 
+static void do_eval(CNTK::FunctionPtr &modelFunc, CNTK::DeviceDescriptor &device, vector<float> &inputData, std::vector<std::vector<float>> &policyData, std::vector<std::vector<float>> &valueData)
+{
+	// Get input variable. The model has only one single input.
+	CNTK::Variable inputVar = modelFunc->Arguments()[0];
+
+	// The model has only one output.
+	// If the model has more than one output, use modelFunc->Outputs to get the list of output variables.
+	auto outputVars = modelFunc->Outputs();
+	CNTK::Variable policyVar = outputVars[0];
+	CNTK::Variable valueVar = outputVars[1];
+
+	// Create input value and input data map
+	CNTK::ValuePtr inputVal = CNTK::Value::CreateBatch(inputVar.Shape(), inputData, device);
+	std::unordered_map<CNTK::Variable, CNTK::ValuePtr> inputDataMap = { { inputVar, inputVal } };
+
+	// Create output data map. Using null as Value to indicate using system allocated memory.
+	// Alternatively, create a Value object and add it to the data map.
+	std::unordered_map<CNTK::Variable, CNTK::ValuePtr> outputDataMap = { { policyVar, nullptr }, { valueVar, nullptr } };
+
+	// Start evaluation on the device
+	modelFunc->Evaluate(inputDataMap, outputDataMap, device);
+
+	// Get evaluate result as dense output
+	CNTK::ValuePtr policyVal = outputDataMap[policyVar];
+	policyVal->CopyVariableValueTo(policyVar, policyData);
+	CNTK::ValuePtr valueVal = outputDataMap[valueVar];
+	valueVal->CopyVariableValueTo(valueVar, valueData);
+}
+
 void dnn_thread_main(int worker_idx)
 {
 	sync_cout << "info string from dnn thread " << worker_idx << sync_endl;
@@ -24,38 +53,14 @@ void dnn_thread_main(int worker_idx)
 	
 	sync_cout << "info string dnn batch size " << batch_size << sync_endl;
 
-	// Get input variable. The model has only one single input.
-	CNTK::Variable inputVar = modelFunc->Arguments()[0];
-
-	// The model has only one output.
-	// If the model has more than one output, use modelFunc->Outputs to get the list of output variables.
-	auto outputVars = modelFunc->Outputs();
-	CNTK::Variable policyVar = outputVars[0];
-	CNTK::Variable valueVar = outputVars[1];
-
 	int ctr = 0;
 	vector<float> inputData(sample_size * batch_size);
 	if (true)
 	{
 		// ダミー評価。対局中に初回の評価を行うと各種初期化が走って持ち時間をロスするため。
-		// Create input value and input data map
-		CNTK::ValuePtr inputVal = CNTK::Value::CreateBatch(inputVar.Shape(), inputData, device);
-		std::unordered_map<CNTK::Variable, CNTK::ValuePtr> inputDataMap = { { inputVar, inputVal } };
-
-		// Create output data map. Using null as Value to indicate using system allocated memory.
-		// Alternatively, create a Value object and add it to the data map.
-		std::unordered_map<CNTK::Variable, CNTK::ValuePtr> outputDataMap = { { policyVar, nullptr }, { valueVar, nullptr } };
-
-		// Start evaluation on the device
-		modelFunc->Evaluate(inputDataMap, outputDataMap, device);
-
-		// Get evaluate result as dense output
-		CNTK::ValuePtr policyVal = outputDataMap[policyVar];
 		std::vector<std::vector<float>> policyData;
-		policyVal->CopyVariableValueTo(policyVar, policyData);
-		CNTK::ValuePtr valueVal = outputDataMap[valueVar];
 		std::vector<std::vector<float>> valueData;
-		valueVal->CopyVariableValueTo(valueVar, valueData);
+		do_eval(modelFunc, device, inputData, policyData, valueData);
 	}
 
 	n_dnn_thread_initalized.fetch_add(1);
@@ -71,25 +76,10 @@ void dnn_thread_main(int worker_idx)
 		{
 			memcpy(&inputData[sample_size*i], eval_targets[i]->input_array, sample_size * sizeof(float));
 		}
-		
-		// Create input value and input data map
-		CNTK::ValuePtr inputVal = CNTK::Value::CreateBatch(inputVar.Shape(), inputData, device);
-		std::unordered_map<CNTK::Variable, CNTK::ValuePtr> inputDataMap = { { inputVar, inputVal } };
 
-		// Create output data map. Using null as Value to indicate using system allocated memory.
-		// Alternatively, create a Value object and add it to the data map.
-		std::unordered_map<CNTK::Variable, CNTK::ValuePtr> outputDataMap = { { policyVar, nullptr }, { valueVar, nullptr } };
-
-		// Start evaluation on the device
-		modelFunc->Evaluate(inputDataMap, outputDataMap, device);
-
-		// Get evaluate result as dense output
-		CNTK::ValuePtr policyVal = outputDataMap[policyVar];
 		std::vector<std::vector<float>> policyData;
-		policyVal->CopyVariableValueTo(policyVar, policyData);
-		CNTK::ValuePtr valueVal = outputDataMap[valueVar];
 		std::vector<std::vector<float>> valueData;
-		valueVal->CopyVariableValueTo(valueVar, valueData);
+		do_eval(modelFunc, device, inputData, policyData, valueData);
 
 		for (size_t i = 0; i < item_count; i++)
 		{

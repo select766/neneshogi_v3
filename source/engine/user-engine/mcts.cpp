@@ -122,7 +122,8 @@ void MCTS::search(UCTNode * root, Position & pos, MCTSSearchInfo & sei, dnn_eval
 	sei.put_dnn_eval = false;
 	mutex_.lock();
 	sei.has_tt_lock = true;
-	eval_info->index.path_length = 0;
+	eval_info->index.path_length = 1;
+	eval_info->index.path_indices[0] = root;
 	search_recursive(root, pos, sei, eval_info);
 	if (sei.has_tt_lock)
 	{
@@ -279,6 +280,7 @@ void MCTS::search_recursive(UCTNode * node, Position & pos, MCTSSearchInfo & sei
 		memcpy(&dec->path, &eval_info->index, sizeof(dnn_table_index));
 		dec->next = node->dup_eval_chain;
 		node->dup_eval_chain = dec;
+		sei.leaf_dup = true;
 		return;
 	}
 

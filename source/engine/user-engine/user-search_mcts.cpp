@@ -95,31 +95,85 @@ void MainThread::think()
 	//  for (auto th : Threads.slaves) th->start_searching();
 	//  Thread::search();
 	//  for (auto th : Threads.slaves) th->wait_for_search_finished();
-	MCTSSearchInfo sei;
-	sei.request_queue = request_queue;
-	sei.response_queue = response_queues[0];
-	sei.cvt = cvt;
-	dnn_eval_obj *eobj = new dnn_eval_obj();
-	bool created;
-	UCTNode *root = mcts->make_root(rootPos, sei, eobj, created);
-	sync_cout << "info string created root " << created << " dnn " << sei.put_dnn_eval << sync_endl;
-	if (sei.put_dnn_eval)
+	Time.init(Search::Limits, rootPos.side_to_move(), rootPos.game_ply());
+	Move bestMove = MOVE_RESIGN;
+	if (!rootPos.is_mated())
 	{
-		dnn_eval_obj *sentback;
-		sei.response_queue->pop(sentback);
-		sync_cout << "info string put " << eobj << " sentback " << sentback << sync_endl;
-		mcts->backup_dnn(sentback);
-		delete sentback;
+		// ルートノードの作成
+		MCTSSearchInfo sei(cvt, request_queue, response_queues[0]);
+		dnn_eval_obj *eobj = new dnn_eval_obj();
+		bool created;
+		UCTNode *root = mcts->make_root(rootPos, sei, eobj, created);
+		sync_cout << "info string created root " << created << " dnn " << sei.put_dnn_eval << sync_endl;
+		// DNN評価が生じた場合はその結果を待つ
+		if (sei.put_dnn_eval)
+		{
+			dnn_eval_obj *sentback;
+			sei.response_queue->pop(sentback);
+			sync_cout << "info string put " << eobj << " sentback " << sentback << sync_endl;
+			mcts->backup_dnn(sentback);
+			delete sentback;
+			root->pprint();
+		}
+		else
+		{
+			delete eobj;
+		}
+
+		// 探索を開始
+		int n_put = 0, n_get = 0, leaf_dup = 0;
+		while (!Threads.stop || (n_put != n_get))
+		{
+			if (!Threads.stop && (n_put - n_get < batch_size * 2))
+			{
+				// 探索
+				MCTSSearchInfo sei(cvt, request_queue, response_queues[0]);
+				dnn_eval_obj *eobj = new dnn_eval_obj();
+				mcts->search(root, rootPos, sei, eobj);
+				if (sei.put_dnn_eval)
+				{
+					n_put++;
+				}
+				else
+				{
+					delete eobj;
+					if (sei.leaf_dup)
+					{
+						// すでに評価中の局面に到達
+						// 木構造が狭い間に無理にたくさん評価しようとすると訪問回数が異常になるので
+						// ヒューリスティックに、短い時間待機
+						// もっと洗練された方法が欲しい
+						leaf_dup++;
+						std::this_thread::sleep_for(std::chrono::milliseconds(1));
+					}
+				}
+
+			}
+
+			if (true)
+			{
+				dnn_eval_obj *eobj = nullptr;
+				if (response_queues[0]->pop_nb(eobj))
+				{
+					mcts->backup_dnn(eobj);
+					delete eobj;
+					n_get++;
+				}
+			}
+
+			if (Time.elapsed() >= Time.optimum())
+			{
+				// 思考時間が来たら、新たな探索は停止する。
+				// ただし、評価途中のものの結果を受け取ってからbestmoveを決める。
+				Threads.stop = true;
+			}
+		}
+		sync_cout << "info string n_put " << n_put << " leaf_dup " << leaf_dup << sync_endl;
 		root->pprint();
-	}
-	else
-	{
-		delete eobj;
-	}
 
-	Move bestMove = mcts->get_bestmove(root, rootPos);
+		bestMove = mcts->get_bestmove(root, rootPos);
+	}
 	sync_cout << "bestmove " << bestMove << sync_endl;
-
 }
 
 // 探索本体。並列化している場合、ここがslaveのエントリーポイント。
