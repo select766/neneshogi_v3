@@ -49,6 +49,10 @@ public:
 	UCTNode* find_or_create_entry(Key key, int game_ply, bool &created);
 	UCTNode* find_entry(const Position &pos);
 	UCTNode* find_entry(Key key, int game_ply);
+	// ハッシュの使用率を千分率で返す
+	int get_hashfull() const;
+	// max_size_mbで与えた上限を超えない範囲で、2のべき乗のハッシュサイズを決定する。
+	static size_t calc_uct_hash_size(int max_size_mb);
 
 private:
 	size_t _uct_hash_size;
@@ -95,6 +99,9 @@ public:
 	UCTNode* make_root(Position &pos, MCTSSearchInfo &sei, dnn_eval_obj *eval_info, bool &created);
 	UCTNode* get_root(const Position &pos);
 	Move get_bestmove(UCTNode *root, Position &pos);
+	void get_pv(UCTNode *root, Position &pos, std::vector<Move> &pv, float &winrate);
+	// ハッシュの使用率を千分率で返す
+	int get_hashfull();
 
 	float c_puct;
 	int virtual_loss;
@@ -109,6 +116,8 @@ private:
 	// UCBに従い次に探索する子ノードのインデックスを選択する
 	int select_edge(UCTNode *node);
 	bool enqueue_pos(const Position &pos, MCTSSearchInfo &sei, dnn_eval_obj *eval_info, float &score);
+	void get_pv_recursive(UCTNode *node, Position &pos, std::vector<Move> &pv, float &winrate, bool root);
+
 
 	std::mutex mutex_;//置換表のロック
 	MCTSTT* tt;//置換表(MCTSオブジェクトと1対1対応)

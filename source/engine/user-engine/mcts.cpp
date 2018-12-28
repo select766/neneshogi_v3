@@ -101,6 +101,17 @@ UCTNode * MCTSTT::find_entry(Key key, int game_ply)
 	return nullptr;
 }
 
+int MCTSTT::get_hashfull() const
+{
+	return (int)(_used * 1000 / _uct_hash_size);
+}
+
+size_t MCTSTT::calc_uct_hash_size(int max_size_mb)
+{
+	size_t hash_size = (size_t)1 << MSB64(((unsigned long long)max_size_mb * 1024 * 1024) / (sizeof(NodeHashEntry) + sizeof(UCTNode)));
+	return hash_size;
+}
+
 MCTSTT::~MCTSTT()
 {
 	delete[] entries;
@@ -238,6 +249,18 @@ Move MCTS::get_bestmove(UCTNode * root, Position & pos)
 		}
 	}
 	return bestMove;
+}
+
+void MCTS::get_pv(UCTNode * root, Position & pos, std::vector<Move>& pv, float &winrate)
+{
+	std::lock_guard<std::mutex> lock(mutex_);
+	get_pv_recursive(root, pos, pv, winrate, true);
+}
+
+int MCTS::get_hashfull()
+{
+	std::lock_guard<std::mutex> lock(mutex_);
+	return tt->get_hashfull();
 }
 
 void MCTS::search_recursive(UCTNode * node, Position & pos, MCTSSearchInfo & sei, dnn_eval_obj *eval_info)
@@ -479,6 +502,51 @@ bool MCTS::enqueue_pos(const Position & pos, MCTSSearchInfo & sei, dnn_eval_obj 
 		// 詰みなので、DNN評価はせず直ちにbackupする。
 		score = -1.0;
 		return false;
+	}
+}
+
+void MCTS::get_pv_recursive(UCTNode * node, Position & pos, std::vector<Move>& pv, float & winrate, bool root)
+{
+	if (node->terminal)
+	{
+		if (root)
+		{
+			winrate = node->score;
+		}
+		return;
+	}
+	int best_n = -1;
+	Move bestMove = MOVE_RESIGN;
+	int best_child_i = 0;
+	for (size_t i = 0; i < node->n_children; i++)
+	{
+		if (node->value_n[i] > best_n)
+		{
+			best_n = node->value_n[i];
+			bestMove = node->move_list[i];
+			best_child_i = i;
+		}
+	}
+	if (pos.pseudo_legal(bestMove) && pos.legal(bestMove))
+	{
+		pv.push_back(bestMove);
+		StateInfo si;
+		pos.do_move(bestMove, si);
+		UCTNode* child_node = tt->find_entry(pos);
+		if (child_node)
+		{
+			get_pv_recursive(child_node, pos, pv, winrate, false);
+		}
+		else
+		{
+			// 読み筋が途切れた
+			// 詰まないものとして扱う
+		}
+		pos.undo_move(bestMove);
+	}
+	if (root)
+	{
+		winrate = node->value_w[best_child_i] / node->value_n[best_child_i];
 	}
 }
 

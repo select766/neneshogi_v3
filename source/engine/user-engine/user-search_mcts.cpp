@@ -28,6 +28,7 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["format_board"] << Option(0, 0, 16);//DNNのboard表現形式
 	o["format_move"] << Option(0, 0, 16);//DNNのmove表現形式
 	o["LeafMateSearchDepth"] << Option(0, 0, 16);//末端局面での詰み探索深さ(0なら探索しない)
+	o["MCTSHash"] << Option(1024, 1, 1048576);//MCTSのハッシュテーブルサイズ(MB)
 }
 
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
@@ -40,7 +41,8 @@ void  Search::clear()
 {
 	gpu_lock_thread_start();
 	request_queue = new MTQueue<dnn_eval_obj*>();
-	mcts = new MCTS(1024 * 1024);
+	int hash_size_mb = (int)Options["MCTSHash"];
+	mcts = new MCTS(MCTSTT::calc_uct_hash_size(hash_size_mb));
 	batch_size = (int)Options["batch_size"];
 
 	sync_cout << "info string initializing dnn threads" << sync_endl;
@@ -125,6 +127,45 @@ static void display_stats()
 		<< sync_endl;
 }
 
+static int winrate_to_cp(float winrate)
+{
+	// 勝率-1.0~1.0を評価値に変換する
+	// tanhの逆関数 (1/2)*log((1+x)/(1-x))
+	// 1, -1ならinfになるので丸める
+	// 1歩=100だが、そういう評価関数を作っていないためスケールはそれっぽく見えるものにするほかない
+	float v = (log1pf(winrate) - log1pf(-winrate)) * 600;
+	if (v < -30000)
+	{
+		v = -30000;
+	}
+	else if (v > 30000)
+	{
+		v = 30000;
+	}
+	return (int)v;
+}
+
+// PVおよび付随情報(nps等)の表示
+static void display_pv(UCTNode *root, Position &rootPos)
+{
+	int elapsed_ms = Time.elapsed();
+	int nps = (int)((long long)n_dnn_evaled_samples * 1000 / max(elapsed_ms, 1));
+	int hashfull = mcts->get_hashfull();
+	vector<Move> pv;
+	float winrate;
+	mcts->get_pv(root, rootPos, pv, winrate);
+	sync_cout << "info";
+	cout << " nodes " << root->value_n_sum;
+	cout << " depth " << pv.size();
+	cout << " score cp " << winrate_to_cp(winrate);
+	cout << " time " << elapsed_ms << " nps " << nps << " hashfull " << hashfull << " pv";
+	for (auto m : pv)
+	{
+		cout << " " << m;
+	}
+	cout << sync_endl;
+}
+
 // 探索開始時に呼び出される。
 // この関数内で初期化を終わらせ、slaveスレッドを起動してThread::search()を呼び出す。
 // そのあとslaveスレッドを終了させ、ベストな指し手を返すこと。
@@ -151,7 +192,6 @@ void MainThread::think()
 		{
 			dnn_eval_obj *sentback;
 			sei.response_queue->pop(sentback);
-			sync_cout << "info string put " << eobj << " sentback " << sentback << sync_endl;
 			mcts->backup_dnn(sentback);
 			delete sentback;
 			root->pprint();
@@ -173,10 +213,17 @@ void MainThread::think()
 			if (th != this)
 				th->start_searching();
 
+		int lastPvTime = Time.elapsed();
 		// masterは探索終了タイミングの決定のみ行う
 		while (true)
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			if (lastPvTime + 1000 < Time.elapsed())
+			{
+				display_pv(root, rootPos);
+				lastPvTime += 1000;
+			}
+
 			if (Time.elapsed() >= Time.optimum())
 			{
 				// 思考時間が来たら、新たな探索は停止する。
