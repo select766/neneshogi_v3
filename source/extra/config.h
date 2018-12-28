@@ -441,6 +441,7 @@
 #define USE_KEY_AFTER
 #define USE_MATE_1PLY
 #define USE_MCTS_MATE_ENGINE
+#define MAX_UCT_CHILDREN 16//UCTノードの子ノード数最大
 #endif
 
 // --------------------

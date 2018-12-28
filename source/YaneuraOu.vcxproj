@@ -721,6 +721,8 @@
     <ClInclude Include="engine\user-engine\dnn_thread.h" />
     <ClInclude Include="engine\user-engine\ipqueue.h" />
     <ClInclude Include="engine\user-engine\mate-search_for_mcts.h" />
+    <ClInclude Include="engine\user-engine\mcts.h" />
+    <ClInclude Include="engine\user-engine\mt_queue.h" />
     <ClInclude Include="engine\user-engine\print_py.h" />
     <ClInclude Include="evaluate.h" />
     <ClInclude Include="eval\evaluate_io.h" />
@@ -799,6 +801,7 @@
     <ClCompile Include="engine\user-engine\dnn_converter_py.cpp" />
     <ClCompile Include="engine\user-engine\dnn_thread.cpp" />
     <ClCompile Include="engine\user-engine\mate-search_for_mcts.cpp" />
+    <ClCompile Include="engine\user-engine\mcts.cpp" />
     <ClCompile Include="engine\user-engine\print_py.cpp" />
     <ClCompile Include="engine\user-engine\user-search.cpp" />
     <ClCompile Include="engine\user-engine\user-search_mcts.cpp" />

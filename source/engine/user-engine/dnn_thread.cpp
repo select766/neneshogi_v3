@@ -7,10 +7,9 @@
 #include "dnn_thread.h"
 
 vector<DeviceModel> device_models;
-shared_ptr<DNNConverter> cvt;
-float policy_temperature;
-float value_temperature;
-float value_scale;
+float policy_temperature = 1.0;
+float value_temperature = 1.0;
+float value_scale = 1.0;
 std::atomic_int n_dnn_thread_initalized = 0;
 
 void dnn_thread_main(int worker_idx)
@@ -23,7 +22,7 @@ void dnn_thread_main(int worker_idx)
 	auto input_shape = cvt->board_shape();
 	int sample_size = accumulate(input_shape.begin(), input_shape.end(), 1, std::multiplies<int>());
 	
-	sync_cout << "info string dnn batch size " << eval_queue->batch_size() << sync_endl;
+	sync_cout << "info string dnn batch size " << batch_size << sync_endl;
 
 	// Get input variable. The model has only one single input.
 	CNTK::Variable inputVar = modelFunc->Arguments()[0];
@@ -35,8 +34,7 @@ void dnn_thread_main(int worker_idx)
 	CNTK::Variable valueVar = outputVars[1];
 
 	int ctr = 0;
-	ipqueue_item<dnn_eval_obj> *eval_objs = eval_queue->alloc_read_buf();
-	vector<float> inputData(sample_size * eval_queue->batch_size());
+	vector<float> inputData(sample_size * batch_size);
 	if (true)
 	{
 		// ダミー評価。対局中に初回の評価を行うと各種初期化が走って持ち時間をロスするため。
@@ -61,14 +59,17 @@ void dnn_thread_main(int worker_idx)
 	}
 
 	n_dnn_thread_initalized.fetch_add(1);
+	sync_cout << "info string dnn initialize ok" << sync_endl;
 
+	dnn_eval_obj** eval_targets = new dnn_eval_obj*[batch_size];
 	while (true)
 	{
-		eval_queue->read_to_buf(eval_objs);
-		// eval_objsをDNN評価
-		for (int i = 0; i < eval_objs->count; i++)
+		size_t item_count = request_queue->pop_batch(eval_targets, batch_size);
+		sync_cout << "info string dnn batch=" << item_count << sync_endl;
+		// eval_targetsをDNN評価
+		for (size_t i = 0; i < item_count; i++)
 		{
-			memcpy(&inputData[sample_size*i], eval_objs->elements[i].input_array, sample_size * sizeof(float));
+			memcpy(&inputData[sample_size*i], eval_targets[i]->input_array, sample_size * sizeof(float));
 		}
 		
 		// Create input value and input data map
@@ -90,22 +91,15 @@ void dnn_thread_main(int worker_idx)
 		std::vector<std::vector<float>> valueData;
 		valueVal->CopyVariableValueTo(valueVar, valueData);
 
-		ipqueue_item<dnn_result_obj> *result_objs;
-		while (!(result_objs = result_queue->begin_write()))
+		for (size_t i = 0; i < item_count; i++)
 		{
-			std::this_thread::sleep_for(std::chrono::microseconds(1));
-		}
-
-		for (int i = 0; i < eval_objs->count; i++)
-		{
-			dnn_eval_obj &eval_obj = eval_objs->elements[i];
-			dnn_result_obj &result_obj = result_objs->elements[i];
+			dnn_eval_obj &eval_obj = *eval_targets[i];
 
 			// 勝率=tanh(valueData[i][0] - valueData[i][1])
 #ifdef EVAL_KPPT
 			result_obj.static_value = eval_obj.static_value;
 #else
-			result_obj.static_value = (int16_t)(tanh((valueData[i][0] - valueData[i][1]) / value_temperature) * value_scale * 32000);
+			eval_obj.static_value = tanh((valueData[i][0] - valueData[i][1]) / value_temperature) * value_scale;
 #endif
 
 			// 合法手内でsoftmax確率を取る
@@ -129,16 +123,13 @@ void dnn_thread_main(int worker_idx)
 			}
 			for (int j = 0; j < eval_obj.n_moves; j++)
 			{
-				result_obj.move_probs[j].move = eval_obj.move_indices[j].move;
-				result_obj.move_probs[j].prob_scaled = (uint16_t)((exps[j] / exp_sum) * 65535);
+				eval_obj.move_indices[j].prob = exps[j] / exp_sum;
 			}
-			result_obj.index = eval_obj.index;
-			result_obj.n_moves = eval_obj.n_moves;
-		}
-		result_objs->count = eval_objs->count;
 
-		// reqult_queueに結果を書く
-		result_queue->end_write();
+			// response_queueに送り返す
+			eval_obj.response_queue->push(&eval_obj);
+		}
+		sync_cout << "info string dnn sent back" << sync_endl;
 	}
 
 }
