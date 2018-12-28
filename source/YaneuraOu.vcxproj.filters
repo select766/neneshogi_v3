@@ -310,9 +310,6 @@
     <ClInclude Include="engine\user-engine\mate-search_for_mcts.h">
       <Filter>リソース ファイル\engine\user-engine</Filter>
     </ClInclude>
-    <ClInclude Include="engine\user-engine\ipqueue.h">
-      <Filter>リソース ファイル\engine\user-engine</Filter>
-    </ClInclude>
     <ClInclude Include="engine\user-engine\dnn_thread.h">
       <Filter>リソース ファイル\engine\user-engine</Filter>
     </ClInclude>

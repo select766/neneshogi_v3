@@ -720,7 +720,6 @@
     <ClInclude Include="engine\user-engine\dnn_eval_obj.h" />
     <ClInclude Include="engine\user-engine\dnn_thread.h" />
     <ClInclude Include="engine\user-engine\gpu_lock.h" />
-    <ClInclude Include="engine\user-engine\ipqueue.h" />
     <ClInclude Include="engine\user-engine\mate-search_for_mcts.h" />
     <ClInclude Include="engine\user-engine\mcts.h" />
     <ClInclude Include="engine\user-engine\mt_queue.h" />
