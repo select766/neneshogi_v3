@@ -12,6 +12,7 @@ static MTQueue<dnn_eval_obj*> **response_queues;
 int batch_size;
 static vector<std::thread*> dnn_threads;
 static vector<MateEngine::MateSearchForMCTS*> leaf_mate_searchers;
+static int pv_interval;//PV表示間隔[ms]
 
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
 void user_test(Position& pos_, istringstream& is)
@@ -23,6 +24,7 @@ void user_test(Position& pos_, istringstream& is)
 // USI::init()のなかからコールバックされる。
 void USI::extra_option(USI::OptionsMap & o)
 {
+	o["PvInterval"] << Option(300, 0, 100000);//PV表示間隔[ms]
 	o["BatchSize"] << Option(16, 1, 65536);
 	o["GPU"] << Option("-1");//使用するGPU番号(-1==CPU)、カンマ区切りで複数指定可能
 	o["DNNFormatBoard"] << Option(0, 0, 16);//DNNのboard表現形式
@@ -44,6 +46,12 @@ void  Search::clear()
 	int hash_size_mb = (int)Options["MCTSHash"];
 	mcts = new MCTS(MCTSTT::calc_uct_hash_size(hash_size_mb));
 	batch_size = (int)Options["BatchSize"];
+	pv_interval = (int)Options["PvInterval"];
+	if (pv_interval == 0)
+	{
+		//PVの定期的な表示をしない
+		pv_interval = 100000000;
+	}
 
 	sync_cout << "info string initializing dnn threads" << sync_endl;
 	// モデルのロード
@@ -146,7 +154,7 @@ static int winrate_to_cp(float winrate)
 }
 
 // PVおよび付随情報(nps等)の表示
-static void display_pv(UCTNode *root, Position &rootPos)
+static vector<Move> display_pv(UCTNode *root, Position &rootPos)
 {
 	int elapsed_ms = Time.elapsed();
 	int nps = (int)((long long)n_dnn_evaled_samples * 1000 / max(elapsed_ms, 1));
@@ -164,6 +172,7 @@ static void display_pv(UCTNode *root, Position &rootPos)
 		cout << " " << m;
 	}
 	cout << sync_endl;
+	return pv;
 }
 
 // 探索開始時に呼び出される。
@@ -179,6 +188,7 @@ void MainThread::think()
 	gpu_lock_extend();
 	reset_stats();
 	Move bestMove = MOVE_RESIGN;
+	Move ponderMove = MOVE_RESIGN;
 	if (!rootPos.is_mated())
 	{
 		// ルートノードの作成
@@ -218,16 +228,18 @@ void MainThread::think()
 		while (true)
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-			if (lastPvTime + 1000 < Time.elapsed())
+			if (lastPvTime + pv_interval < Time.elapsed())
 			{
 				display_pv(root, rootPos);
-				lastPvTime += 1000;
+				lastPvTime += pv_interval;
 			}
 
-			if (Time.elapsed() >= Time.optimum())
+			if (Threads.stop || (Time.elapsed() >= Time.optimum() && !Threads.ponder))
 			{
 				// 思考時間が来たら、新たな探索は停止する。
 				// ただし、評価途中のものの結果を受け取ってからbestmoveを決める。
+				// Ponder中は探索を止めない。
+				// Ponderが外れた時、Threads.ponder==trueのままThreads.stop==trueとなる
 				Threads.stop = true;
 				break;
 			}
@@ -237,11 +249,26 @@ void MainThread::think()
 		for (Thread* th : Threads)
 			if (th != this)
 				th->wait_for_search_finished();
+		vector<Move> pv = display_pv(root, rootPos);
 		root->pprint();
-
-		bestMove = mcts->get_bestmove(root, rootPos);
+		if (pv.size() >= 1)
+		{
+			bestMove = pv[0];
+			if (pv.size() >= 2)
+			{
+				ponderMove = pv[1];
+			}
+		}
 	}
-	sync_cout << "bestmove " << bestMove << sync_endl;
+
+	if (ponderMove != MOVE_RESIGN)
+	{
+		sync_cout << "bestmove " << bestMove << " ponder " << ponderMove << sync_endl;
+	}
+	else
+	{
+		sync_cout << "bestmove " << bestMove << sync_endl;
+	}
 	display_stats();
 }
 
