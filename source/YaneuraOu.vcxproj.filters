@@ -325,6 +325,9 @@
     <ClInclude Include="engine\user-engine\mcts.h">
       <Filter>リソース ファイル\engine\user-engine</Filter>
     </ClInclude>
+    <ClInclude Include="engine\user-engine\gpu_lock.h">
+      <Filter>リソース ファイル\engine\user-engine</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="movegen.cpp">
@@ -520,6 +523,9 @@
       <Filter>リソース ファイル\engine\user-engine</Filter>
     </ClCompile>
     <ClCompile Include="engine\user-engine\mcts.cpp">
+      <Filter>リソース ファイル\engine\user-engine</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\user-engine\gpu_lock.cpp">
       <Filter>リソース ファイル\engine\user-engine</Filter>
     </ClCompile>
   </ItemGroup>

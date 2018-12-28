@@ -3,6 +3,7 @@
 #include "CNTKLibrary.h"
 #include "mcts.h"
 #include "dnn_thread.h"
+#include "gpu_lock.h"
 
 MTQueue<dnn_eval_obj*> *request_queue = nullptr;
 static MCTS *mcts = nullptr;
@@ -35,6 +36,7 @@ void Search::init()
 // isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
 void  Search::clear()
 {
+	gpu_lock_thread_start();
 	request_queue = new MTQueue<dnn_eval_obj*>();
 	mcts = new MCTS(1024 * 1024);
 	batch_size = (int)Options["batch_size"];
@@ -96,6 +98,7 @@ void MainThread::think()
 	//  Thread::search();
 	//  for (auto th : Threads.slaves) th->wait_for_search_finished();
 	Time.init(Search::Limits, rootPos.side_to_move(), rootPos.game_ply());
+	gpu_lock_extend();
 	Move bestMove = MOVE_RESIGN;
 	if (!rootPos.is_mated())
 	{

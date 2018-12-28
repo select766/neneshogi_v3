@@ -719,6 +719,7 @@
     <ClInclude Include="engine\user-engine\dnn_converter_py.h" />
     <ClInclude Include="engine\user-engine\dnn_eval_obj.h" />
     <ClInclude Include="engine\user-engine\dnn_thread.h" />
+    <ClInclude Include="engine\user-engine\gpu_lock.h" />
     <ClInclude Include="engine\user-engine\ipqueue.h" />
     <ClInclude Include="engine\user-engine\mate-search_for_mcts.h" />
     <ClInclude Include="engine\user-engine\mcts.h" />
@@ -800,6 +801,7 @@
     <ClCompile Include="engine\user-engine\dnn_converter.cpp" />
     <ClCompile Include="engine\user-engine\dnn_converter_py.cpp" />
     <ClCompile Include="engine\user-engine\dnn_thread.cpp" />
+    <ClCompile Include="engine\user-engine\gpu_lock.cpp" />
     <ClCompile Include="engine\user-engine\mate-search_for_mcts.cpp" />
     <ClCompile Include="engine\user-engine\mcts.cpp" />
     <ClCompile Include="engine\user-engine\print_py.cpp" />
