@@ -102,6 +102,8 @@ public:
 	void get_pv(UCTNode *root, Position &pos, std::vector<Move> &pv, float &winrate);
 	// ハッシュの使用率を千分率で返す
 	int get_hashfull();
+	// 初期化(コンストラクタ直後に呼ぶ必要はない)
+	void clear();
 
 	float c_puct;
 	int virtual_loss;

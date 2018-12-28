@@ -263,6 +263,11 @@ int MCTS::get_hashfull()
 	return tt->get_hashfull();
 }
 
+void MCTS::clear()
+{
+	tt->clear();
+}
+
 void MCTS::search_recursive(UCTNode * node, Position & pos, MCTSSearchInfo & sei, dnn_eval_obj *eval_info)
 {
 	if (eval_info->index.path_length >= MAX_SEARCH_PATH_LENGTH)

@@ -18,6 +18,7 @@ static int root_mate_thread_id = -1;//ルート局面からの詰み探索をす
 static vector<Move> root_mate_pv;
 static atomic_bool root_mate_found = false;//ルート局面からの詰み探索で詰みがあった場合
 static int nodes_limit = INT_MAX;//探索ノード数の上限
+static bool already_initialized = false;//一度Search::clearで初期化済みかどうか。
 
 // 定跡の指し手を選択するモジュール
 static Book::BookMoveSelector book;
@@ -53,104 +54,117 @@ void Search::init()
 // isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
 void  Search::clear()
 {
-	gpu_lock_thread_start();
-	request_queue = new MTQueue<dnn_eval_obj*>();
-	int hash_size_mb = (int)Options["MCTSHash"];
-	mcts = new MCTS(MCTSTT::calc_uct_hash_size(hash_size_mb));
-	batch_size = (int)Options["BatchSize"];
-	pv_interval = (int)Options["PvInterval"];
-	if (pv_interval == 0)
+	if (!already_initialized)
 	{
-		//PVの定期的な表示をしない
-		pv_interval = 100000000;
-	}
-	nodes_limit = (int)Options["NodesLimit"];
-	if (nodes_limit <= 0)
-	{
-		nodes_limit = INT_MAX;
-	}
-
-	sync_cout << "info string initializing dnn threads" << sync_endl;
-	// モデルのロード
-	// 本来はファイル名からフォーマットを推論したい
-	// 将棋所からは日本語WindowsだとオプションがCP932で来る。mbstowcsにそれを認識させ、日本語ファイル名を正しく変換
-	setlocale(LC_ALL, "");
-	int format_board = (int)Options["DNNFormatBoard"], format_move = (int)Options["DNNFormatMove"];
-	wchar_t model_path[1024];
-	string evaldir = Options["EvalDir"];
-	wchar_t evaldir_w[1024];
-	mbstowcs(evaldir_w, evaldir.c_str(), sizeof(model_path) / sizeof(model_path[0]) - 1); // C4996
-	swprintf(model_path, sizeof(model_path) / sizeof(model_path[0]), L"%s/nene_%d_%d.cmf", evaldir_w, format_board, format_move);
-	// デバイス数だけモデルをロードし各デバイスに割り当てる
-	stringstream ss(Options["GPU"]);//カンマ区切りでGPU番号を並べる
-	string item;
-	while (getline(ss, item, ',')) {
-		if (!item.empty()) {
-			int gpu_id = stoi(item);
-			CNTK::DeviceDescriptor device = gpu_id >= 0 ? CNTK::DeviceDescriptor::GPUDevice((unsigned int)gpu_id) : CNTK::DeviceDescriptor::CPUDevice();
-			CNTK::FunctionPtr modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
-			device_models.push_back(DeviceModel(device, modelFunc));
-		}
-	}
-	cvt =  new DNNConverter(format_board, format_move);
-
-	// スレッド間キュー初期化
-	request_queue = new MTQueue<dnn_eval_obj*>();
-	int threads = (int)Options["Threads"];
-	response_queues = new MTQueue<dnn_eval_obj*>*[threads];
-	for (int i = 0; i < threads; i++)
-	{
-		response_queues[i] = new MTQueue<dnn_eval_obj*>();
-	}
-
-	// 評価スレッドを立てる
-	for (int i = 0; i < device_models.size(); i++)
-	{
-		dnn_threads.push_back(new std::thread(dnn_thread_main, i));
-	}
-
-	// スレッドの動作開始(DNNの初期化)まで待つ
-	while (n_dnn_thread_initalized < dnn_threads.size())
-	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	}
-
-	// 末端詰み探索の初期化
-	int LeafMateSearchDepth = (int)Options["LeafMateSearchDepth"];
-	for (int i = 0; i < threads; i++)
-	{
-		if (LeafMateSearchDepth > 0)
+		// 初期化する
+		gpu_lock_thread_start();
+		request_queue = new MTQueue<dnn_eval_obj*>();
+		int hash_size_mb = (int)Options["MCTSHash"];
+		mcts = new MCTS(MCTSTT::calc_uct_hash_size(hash_size_mb));
+		batch_size = (int)Options["BatchSize"];
+		pv_interval = (int)Options["PvInterval"];
+		if (pv_interval == 0)
 		{
+			//PVの定期的な表示をしない
+			pv_interval = 100000000;
+		}
+		nodes_limit = (int)Options["NodesLimit"];
+		if (nodes_limit <= 0)
+		{
+			nodes_limit = INT_MAX;
+		}
+
+		sync_cout << "info string initializing dnn threads" << sync_endl;
+		// モデルのロード
+		// 本来はファイル名からフォーマットを推論したい
+		// 将棋所からは日本語WindowsだとオプションがCP932で来る。mbstowcsにそれを認識させ、日本語ファイル名を正しく変換
+		setlocale(LC_ALL, "");
+		int format_board = (int)Options["DNNFormatBoard"], format_move = (int)Options["DNNFormatMove"];
+		wchar_t model_path[1024];
+		string evaldir = Options["EvalDir"];
+		wchar_t evaldir_w[1024];
+		mbstowcs(evaldir_w, evaldir.c_str(), sizeof(model_path) / sizeof(model_path[0]) - 1); // C4996
+		swprintf(model_path, sizeof(model_path) / sizeof(model_path[0]), L"%s/nene_%d_%d.cmf", evaldir_w, format_board, format_move);
+		// デバイス数だけモデルをロードし各デバイスに割り当てる
+		stringstream ss(Options["GPU"]);//カンマ区切りでGPU番号を並べる
+		string item;
+		while (getline(ss, item, ',')) {
+			if (!item.empty()) {
+				int gpu_id = stoi(item);
+				CNTK::DeviceDescriptor device = gpu_id >= 0 ? CNTK::DeviceDescriptor::GPUDevice((unsigned int)gpu_id) : CNTK::DeviceDescriptor::CPUDevice();
+				CNTK::FunctionPtr modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
+				device_models.push_back(DeviceModel(device, modelFunc));
+			}
+		}
+		cvt = new DNNConverter(format_board, format_move);
+
+		// スレッド間キュー初期化
+		request_queue = new MTQueue<dnn_eval_obj*>();
+		int threads = (int)Options["Threads"];
+		response_queues = new MTQueue<dnn_eval_obj*>*[threads];
+		for (int i = 0; i < threads; i++)
+		{
+			response_queues[i] = new MTQueue<dnn_eval_obj*>();
+		}
+
+		// 評価スレッドを立てる
+		for (int i = 0; i < device_models.size(); i++)
+		{
+			dnn_threads.push_back(new std::thread(dnn_thread_main, i));
+		}
+
+		// スレッドの動作開始(DNNの初期化)まで待つ
+		while (n_dnn_thread_initalized < dnn_threads.size())
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+
+		// 末端詰み探索の初期化
+		int LeafMateSearchDepth = (int)Options["LeafMateSearchDepth"];
+		for (int i = 0; i < threads; i++)
+		{
+			if (LeafMateSearchDepth > 0)
+			{
+				auto ms = new MateEngine::MateSearchForMCTS();
+				ms->init(16, LeafMateSearchDepth);
+				leaf_mate_searchers.push_back(ms);
+			}
+			else
+			{
+				leaf_mate_searchers.push_back(nullptr);
+			}
+		}
+
+		// ルート局面からの詰み探索
+		if ((bool)Options["RootMateSearch"])
+		{
+			root_mate_thread_id = threads - 1;//最終スレッドを使う
 			auto ms = new MateEngine::MateSearchForMCTS();
-			ms->init(16, LeafMateSearchDepth);
-			leaf_mate_searchers.push_back(ms);
+			ms->init(128, MAX_PLY);
+			root_mate_searcher = ms;
 		}
 		else
 		{
-			leaf_mate_searchers.push_back(nullptr);
+			root_mate_thread_id = -1;
 		}
-	}
 
-	// ルート局面からの詰み探索
-	if ((bool)Options["RootMateSearch"])
-	{
-		root_mate_thread_id = threads - 1;//最終スレッドを使う
-		auto ms = new MateEngine::MateSearchForMCTS();
-		ms->init(128, MAX_PLY);
-		root_mate_searcher = ms;
+		// -----------------------
+		//   定跡の読み込み
+		// -----------------------
+
+		book.read_book();
+
+		sync_cout << "info string initialized all dnn threads" << sync_endl;
+
+		already_initialized = true;
 	}
 	else
 	{
-		root_mate_thread_id = -1;
+		// 同じ設定で2度目以降の対局を行う。
+		// もし違う設定が来ていても認識しない。
+		sync_cout << "info string already initialized" << sync_endl;
+		mcts->clear();
 	}
-
-	// -----------------------
-	//   定跡の読み込み
-	// -----------------------
-
-	book.read_book();
-
-	sync_cout << "info string initialized all dnn threads" << sync_endl;
 }
 
 // 探索に関する統計情報のリセット。思考開始時に呼ぶ。
