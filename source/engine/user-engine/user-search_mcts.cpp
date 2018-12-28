@@ -10,6 +10,7 @@ static MCTS *mcts = nullptr;
 DNNConverter *cvt = nullptr;
 static MTQueue<dnn_eval_obj*> **response_queues;
 int batch_size;
+int n_gpu_threads = 0;//GPUスレッドの数(GPU数と必ずしも一致しない)
 static vector<std::thread*> dnn_threads;
 static vector<MateEngine::MateSearchForMCTS*> leaf_mate_searchers;
 static MateEngine::MateSearchForMCTS *root_mate_searcher = nullptr;
@@ -26,6 +27,53 @@ static Book::BookMoveSelector book;
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
 void user_test(Position& pos_, istringstream& is)
 {
+	string token;
+	is >> token;
+	if (token == "dnnbench")
+	{
+		// DNNを単純に動作させた場合のnpsをベンチマークする。
+		// isreadyでモデルを読み込み終わっている必要がある。
+		int count;//サンプル数
+		is >> count;
+
+		sync_cout << "info string start bench" << sync_endl;
+		MTQueue<dnn_eval_obj*> *response_queue = response_queues[0];
+		int n_put = 0, n_get = 0;
+		std::chrono::system_clock::time_point bench_start = std::chrono::system_clock::now();
+		while (n_get < count)
+		{
+			if (n_put < count && (n_put - n_get) < batch_size * n_gpu_threads * 2)
+			{
+				for (size_t i = 0; i < batch_size; i++)
+				{
+					dnn_eval_obj *eobj = new dnn_eval_obj();
+					// ダミーデータを入れておく
+					eobj->n_moves = 1;
+					eobj->move_indices[0].move = MOVE_NONE;
+					eobj->move_indices[0].index = 0;
+					memset(eobj->input_array, 0, sizeof(eobj->input_array));
+
+					eobj->response_queue = response_queue;
+					request_queue->push(eobj);
+					n_put++;
+				}
+
+			}
+
+			dnn_eval_obj *eobj_ret = nullptr;
+			while (response_queue->pop_nb(eobj_ret))
+			{
+				n_get++;
+				delete eobj_ret;
+			}
+		}
+		std::chrono::system_clock::time_point bench_end = std::chrono::system_clock::now();
+		// 正しいキャスト方法がよく分かってない
+		double elapsed = (std::chrono::duration_cast<std::chrono::milliseconds>(bench_end - bench_start)).count() / 1000.0;
+		int nps = (int)(count / elapsed);
+
+		sync_cout << "info string bench done " << elapsed << " sec, nps=" << nps << sync_endl;
+	}
 }
 
 
@@ -96,6 +144,7 @@ void  Search::clear()
 				device_models.push_back(DeviceModel(device, modelFunc));
 			}
 		}
+		n_gpu_threads = device_models.size();
 		cvt = new DNNConverter(format_board, format_move);
 
 		// スレッド間キュー初期化
