@@ -120,6 +120,8 @@ MCTS::~MCTS()
 void MCTS::search(UCTNode * root, Position & pos, MCTSSearchInfo & sei, dnn_eval_obj *eval_info)
 {
 	sei.put_dnn_eval = false;
+	sei.leaf_dup = false;
+	sei.leaf_mate_search_found = false;
 	mutex_.lock();
 	sei.has_tt_lock = true;
 	eval_info->index.path_length = 1;
@@ -161,6 +163,12 @@ void MCTS::backup_dnn(dnn_eval_obj * eval_info)
 	}
 	leaf_node.n_children = n_moves_use;
 	float score = eval_info->static_value; // [-1.0, 1.0]
+	if (eval_info->found_mate)
+	{
+		// この局面からの詰みが見つかっているため、DNNの評価に優先させる
+		leaf_node.terminal = true;
+		score = 1.0;//自分が攻め側
+	}
 	leaf_node.score = score;
 
 	backup_tree(path, score);
@@ -187,12 +195,13 @@ UCTNode * MCTS::make_root(Position & pos, MCTSSearchInfo & sei, dnn_eval_obj * e
 	{
 		// 新規子ノードなので、評価
 		float mate_score;
-		bool not_mate = enqueue_pos(pos, sei, eval_info, mate_score, false);
+		bool not_mate = enqueue_pos(pos, sei, eval_info, mate_score);
 		if (not_mate)
 		{
 			// 評価待ち
 			// 非同期に処理される
 			sei.put_dnn_eval = true;
+
 		}
 		else
 		{
@@ -315,12 +324,25 @@ void MCTS::search_recursive(UCTNode * node, Position & pos, MCTSSearchInfo & sei
 		// 行列作成前に置換表ロック開放
 		sei.has_tt_lock = false;
 		mutex_.unlock();
-		bool not_mate = enqueue_pos(pos, sei, eval_info, mate_score, false);
+		bool not_mate = enqueue_pos(pos, sei, eval_info, mate_score);
 		if (not_mate)
 		{
 			// 評価待ち
 			// 非同期に処理される
 			sei.put_dnn_eval = true;
+
+			// 詰みがないか探索
+			if (sei.mate_searcher)
+			{
+				std::vector<Move> moves;
+				if (sei.mate_searcher->dfpn(pos, &moves))
+				{
+					// 詰みがある
+					// DNNの結果の代わりに詰みであるという情報を入れることにする
+					eval_info->found_mate = true;
+					sei.leaf_mate_search_found = true;
+				}
+			}
 		}
 		else
 		{
@@ -363,7 +385,7 @@ void MCTS::backup_tree(dnn_table_index & path, float leaf_score)
 
 void MCTS::update_on_terminal(dnn_table_index & path, float leaf_score)
 {
-	backup_tree(path,leaf_score);
+	backup_tree(path, leaf_score);
 }
 
 void MCTS::update_on_mate(dnn_table_index & path, float mate_score)
@@ -413,7 +435,7 @@ int MCTS::select_edge(UCTNode * node)
 	return best_index;
 }
 
-bool MCTS::enqueue_pos(const Position & pos, MCTSSearchInfo & sei, dnn_eval_obj *eval_info, float & score, bool use_mate_search)
+bool MCTS::enqueue_pos(const Position & pos, MCTSSearchInfo & sei, dnn_eval_obj *eval_info, float & score)
 {
 	if (pos.DeclarationWin() != MOVE_NONE)
 	{
@@ -444,6 +466,7 @@ bool MCTS::enqueue_pos(const Position & pos, MCTSSearchInfo & sei, dnn_eval_obj 
 
 	if (not_mate)
 	{
+		eval_info->found_mate = false;
 		eval_info->n_moves = m_i;
 		sei.cvt->get_board_array(pos, eval_info->input_array);
 		eval_info->response_queue = sei.response_queue;

@@ -74,7 +74,6 @@ void dnn_thread_main(int worker_idx)
 	while (true)
 	{
 		size_t item_count = request_queue->pop_batch(eval_targets, batch_size);
-		sync_cout << "info string dnn batch=" << item_count << sync_endl;
 		// eval_targetsをDNN評価
 		for (size_t i = 0; i < item_count; i++)
 		{
@@ -126,7 +125,6 @@ void dnn_thread_main(int worker_idx)
 
 		n_dnn_evaled_batches.fetch_add(1);
 		n_dnn_evaled_samples.fetch_add((int)item_count);
-		sync_cout << "info string dnn sent back" << sync_endl;
 	}
 
 }

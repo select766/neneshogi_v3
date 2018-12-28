@@ -4,6 +4,7 @@
 #include "dnn_eval_obj.h"
 #include "dnn_converter.h"
 #include "mt_queue.h"
+#include "mate-search_for_mcts.h"
 
 class NodeHashEntry
 {
@@ -69,12 +70,15 @@ public:
 	bool put_dnn_eval;
 	// 探索結果が現在DNN評価途中の局面だったかどうか
 	bool leaf_dup;
+	// 末端での詰み探索の結果、詰みだった（局面そのものが詰んでいるのとは異なる）
+	bool leaf_mate_search_found;
 	DNNConverter *cvt;
 	MTQueue<dnn_eval_obj*> *request_queue;
 	MTQueue<dnn_eval_obj*> *response_queue;
+	MateEngine::MateSearchForMCTS *mate_searcher;
 
-	MCTSSearchInfo(DNNConverter *cvt, MTQueue<dnn_eval_obj*> *request_queue, MTQueue<dnn_eval_obj*> *response_queue)
-		: cvt(cvt), request_queue(request_queue), response_queue(response_queue), has_tt_lock(false), put_dnn_eval(false), leaf_dup(false)
+	MCTSSearchInfo(DNNConverter *cvt, MTQueue<dnn_eval_obj*> *request_queue, MTQueue<dnn_eval_obj*> *response_queue, MateEngine::MateSearchForMCTS *mate_searcher)
+		: cvt(cvt), request_queue(request_queue), response_queue(response_queue), has_tt_lock(false), put_dnn_eval(false), leaf_dup(false), mate_searcher(mate_searcher)
 	{
 	}
 };
@@ -104,7 +108,7 @@ private:
 	void update_on_mate(dnn_table_index &path, float mate_score);
 	// UCBに従い次に探索する子ノードのインデックスを選択する
 	int select_edge(UCTNode *node);
-	bool enqueue_pos(const Position &pos, MCTSSearchInfo &sei, dnn_eval_obj *eval_info, float &score, bool use_mate_search);
+	bool enqueue_pos(const Position &pos, MCTSSearchInfo &sei, dnn_eval_obj *eval_info, float &score);
 
 	std::mutex mutex_;//置換表のロック
 	MCTSTT* tt;//置換表(MCTSオブジェクトと1対1対応)

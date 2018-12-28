@@ -11,6 +11,7 @@ DNNConverter *cvt = nullptr;
 static MTQueue<dnn_eval_obj*> **response_queues;
 int batch_size;
 static vector<std::thread*> dnn_threads;
+static vector<MateEngine::MateSearchForMCTS*> leaf_mate_searchers;
 
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
 void user_test(Position& pos_, istringstream& is)
@@ -26,6 +27,7 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["GPU"] << Option("-1");//使用するGPU番号(-1==CPU)、カンマ区切りで複数指定可能
 	o["format_board"] << Option(0, 0, 16);//DNNのboard表現形式
 	o["format_move"] << Option(0, 0, 16);//DNNのmove表現形式
+	o["LeafMateSearchDepth"] << Option(0, 0, 16);//末端局面での詰み探索深さ(0なら探索しない)
 }
 
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
@@ -85,6 +87,23 @@ void  Search::clear()
 	{
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
+
+	// 末端詰み探索の初期化
+	int LeafMateSearchDepth = (int)Options["LeafMateSearchDepth"];
+	for (int i = 0; i < threads; i++)
+	{
+		if (LeafMateSearchDepth > 0)
+		{
+			auto ms = new MateEngine::MateSearchForMCTS();
+			ms->init(16, LeafMateSearchDepth);
+			leaf_mate_searchers.push_back(ms);
+		}
+		else
+		{
+			leaf_mate_searchers.push_back(nullptr);
+		}
+	}
+
 	sync_cout << "info string initialized all dnn threads" << sync_endl;
 }
 
@@ -122,7 +141,7 @@ void MainThread::think()
 	if (!rootPos.is_mated())
 	{
 		// ルートノードの作成
-		MCTSSearchInfo sei(cvt, request_queue, response_queues[0]);
+		MCTSSearchInfo sei(cvt, request_queue, response_queues[0], nullptr);
 		dnn_eval_obj *eobj = new dnn_eval_obj();
 		bool created;
 		UCTNode *root = mcts->make_root(rootPos, sei, eobj, created);
@@ -140,6 +159,13 @@ void MainThread::think()
 		else
 		{
 			delete eobj;
+		}
+		if (root->terminal)
+		{
+			// ルート局面にて以前詰みが見つかっているが、それだと指し手が決まらないのでそのフラグを解除して探索させる
+			sync_cout << "info string root is terminal (found mate)" << sync_endl;
+			root->terminal = false;
+
 		}
 
 		// slaveスレッドで探索を開始
@@ -178,7 +204,7 @@ void MainThread::think()
 void Thread::search()
 {
 	UCTNode *root = mcts->get_root(rootPos);
-	int n_put = 0, n_get = 0, leaf_dup = 0;
+	int n_put = 0, n_get = 0, leaf_dup = 0, leaf_mate_search_found = 0;
 	MTQueue<dnn_eval_obj*> *response_queue = response_queues[thread_id()];
 	while (!Threads.stop || (n_put != n_get))
 	{
@@ -186,12 +212,16 @@ void Thread::search()
 		if (enable_search)
 		{
 			// 探索
-			MCTSSearchInfo sei(cvt, request_queue, response_queue);
+			MCTSSearchInfo sei(cvt, request_queue, response_queue, leaf_mate_searchers[thread_id()]);
 			dnn_eval_obj *eobj = new dnn_eval_obj();
 			mcts->search(root, rootPos, sei, eobj);
 			if (sei.put_dnn_eval)
 			{
 				n_put++;
+				if (sei.leaf_mate_search_found)
+				{
+					leaf_mate_search_found++;
+				}
 			}
 			else
 			{
@@ -229,7 +259,8 @@ void Thread::search()
 			}
 		}
 	}
-	sync_cout << "info string thread " << thread_id() << " n_put " << n_put << " leaf_dup " << leaf_dup << sync_endl;
+	sync_cout << "info string thread " << thread_id() << " n_put " << n_put
+		<< " leaf_dup " << leaf_dup << " leaf_mate_search_found " << leaf_mate_search_found << sync_endl;
 }
 
 #endif // USER_ENGINE_MCTS

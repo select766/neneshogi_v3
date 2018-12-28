@@ -41,4 +41,5 @@ public:
 	dnn_move_index move_indices[MAX_MOVES];
 	float static_value;//局面の静的評価値(-1~1)
 	MTQueue<dnn_eval_obj*> *response_queue;//評価完了時にこのオブジェクトのポインタをputするキュー
+	bool found_mate;
 };
