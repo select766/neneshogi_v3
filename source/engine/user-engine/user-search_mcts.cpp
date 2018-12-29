@@ -362,7 +362,7 @@ void MainThread::think()
 			{
 				// Ponder中は探索を止めない。
 				// Ponderが外れた時、Threads.ponder==trueのままThreads.stop==trueとなる
-				if (Time.elapsed() >= Time.optimum() || root->value_n_sum > nodes_limit)
+				if (Time.elapsed() >= Time.optimum() || root->value_n_sum > nodes_limit || root_mate_found)
 				{
 					// 思考時間が来たら、新たな探索は停止する。
 					// ただし、評価途中のものの結果を受け取ってからbestmoveを決める。
