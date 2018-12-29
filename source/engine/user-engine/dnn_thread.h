@@ -8,7 +8,7 @@
 #include <vector>
 #include <functional>
 
-extern MTQueue<dnn_eval_obj*> *request_queue;
+extern vector<MTQueue<dnn_eval_obj*>*> request_queues;
 extern float policy_temperature;
 extern float value_temperature;
 extern float value_scale;

@@ -5,10 +5,10 @@
 #include "dnn_thread.h"
 #include "gpu_lock.h"
 
-MTQueue<dnn_eval_obj*> *request_queue = nullptr;
+vector<MTQueue<dnn_eval_obj*>*> request_queues;
 static MCTS *mcts = nullptr;
 DNNConverter *cvt = nullptr;
-static MTQueue<dnn_eval_obj*> **response_queues;
+static vector<MTQueue<dnn_eval_obj*>*> response_queues;
 int batch_size;
 int n_gpu_threads = 0;//GPUスレッドの数(GPU数と必ずしも一致しない)
 static vector<std::thread*> dnn_threads;
@@ -54,7 +54,7 @@ void user_test(Position& pos_, istringstream& is)
 					memset(eobj->input_array, 0, sizeof(eobj->input_array));
 
 					eobj->response_queue = response_queue;
-					request_queue->push(eobj);
+					request_queues[n_put % request_queues.size()]->push(eobj);
 					n_put++;
 				}
 
@@ -70,7 +70,7 @@ void user_test(Position& pos_, istringstream& is)
 		std::chrono::system_clock::time_point bench_end = std::chrono::system_clock::now();
 		// 正しいキャスト方法がよく分かってない
 		double elapsed = (std::chrono::duration_cast<std::chrono::milliseconds>(bench_end - bench_start)).count() / 1000.0;
-		int nps = (int)(count / elapsed);
+		int nps = (int)(n_put / elapsed);
 
 		sync_cout << "info string bench done " << elapsed << " sec, nps=" << nps << sync_endl;
 	}
@@ -106,7 +106,6 @@ void  Search::clear()
 	{
 		// 初期化する
 		gpu_lock_thread_start();
-		request_queue = new MTQueue<dnn_eval_obj*>();
 		int hash_size_mb = (int)Options["MCTSHash"];
 		mcts = new MCTS(MCTSTT::calc_uct_hash_size(hash_size_mb));
 		batch_size = (int)Options["BatchSize"];
@@ -148,16 +147,25 @@ void  Search::clear()
 		cvt = new DNNConverter(format_board, format_move);
 
 		// スレッド間キュー初期化
-		request_queue = new MTQueue<dnn_eval_obj*>();
 		int threads = (int)Options["Threads"];
-		response_queues = new MTQueue<dnn_eval_obj*>*[threads];
 		for (int i = 0; i < threads; i++)
 		{
-			response_queues[i] = new MTQueue<dnn_eval_obj*>();
+			response_queues.push_back(new MTQueue<dnn_eval_obj*>());
 		}
+#ifdef MULTI_REQUEST_QUEUE
+		for (size_t i = 0; i < n_gpu_threads; i++)
+		{
+			// リクエストキューをGPUスレッド分立てる
+			request_queues.push_back(new MTQueue<dnn_eval_obj*>());
+		}
+#else
+		// リクエストキューは1個だけ
+		request_queues.push_back(new MTQueue<dnn_eval_obj*>());
+#endif // MULTI_REQUEST_QUEUE
+
 
 		// 評価スレッドを立てる
-		for (int i = 0; i < device_models.size(); i++)
+		for (int i = 0; i < n_gpu_threads; i++)
 		{
 			dnn_threads.push_back(new std::thread(dnn_thread_main, i));
 		}
@@ -165,7 +173,7 @@ void  Search::clear()
 		// スレッドの動作開始(DNNの初期化)まで待つ
 		while (n_dnn_thread_initalized < dnn_threads.size())
 		{
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			sleep(1);
 		}
 
 		// 末端詰み探索の初期化
@@ -314,7 +322,7 @@ void MainThread::think()
 	else if (!rootPos.is_mated())
 	{
 		// ルートノードの作成
-		MCTSSearchInfo sei(cvt, request_queue, response_queues[0], nullptr);
+		MCTSSearchInfo sei(cvt, request_queues[thread_id() % request_queues.size()], response_queues[thread_id()], nullptr);
 		dnn_eval_obj *eobj = new dnn_eval_obj();
 		bool created;
 		UCTNode *root = mcts->make_root(rootPos, sei, eobj, created);
@@ -439,6 +447,7 @@ void Thread::search()
 	UCTNode *root = mcts->get_root(rootPos);
 	int n_put = 0, n_get = 0, leaf_dup = 0, leaf_mate_search_found = 0;
 	MTQueue<dnn_eval_obj*> *response_queue = response_queues[thread_id()];
+	MTQueue<dnn_eval_obj*> *request_queue = request_queues[thread_id() % request_queues.size()];
 	while (!Threads.stop || (n_put != n_get))
 	{
 		bool enable_search = !Threads.stop && (n_put - n_get < batch_size * 2);

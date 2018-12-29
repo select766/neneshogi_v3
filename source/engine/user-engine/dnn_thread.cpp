@@ -51,6 +51,7 @@ void dnn_thread_main(int worker_idx)
 	auto &device_model = device_models[worker_idx];
 	auto &device = device_model.device;
 	auto &modelFunc = device_model.modelFunc;
+	MTQueue<dnn_eval_obj*> *request_queue = request_queues[worker_idx % request_queues.size()];
 	
 	auto input_shape = cvt->board_shape();
 	int sample_size = accumulate(input_shape.begin(), input_shape.end(), 1, std::multiplies<int>());
