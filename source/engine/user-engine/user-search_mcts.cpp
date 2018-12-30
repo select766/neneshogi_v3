@@ -18,7 +18,7 @@ static int pv_interval;//PV表示間隔[ms]
 static int root_mate_thread_id = -1;//ルート局面からの詰み探索をするスレッドのid(-1の場合はしない)
 static vector<Move> root_mate_pv;
 static atomic_bool root_mate_found = false;//ルート局面からの詰み探索で詰みがあった場合
-static int nodes_limit = INT_MAX;//探索ノード数の上限
+static int nodes_limit = NODES_LIMIT_MAX;//探索ノード数の上限
 static bool already_initialized = false;//一度Search::clearで初期化済みかどうか。
 
 // 定跡の指し手を選択するモジュール
@@ -118,7 +118,7 @@ void  Search::clear()
 		nodes_limit = (int)Options["NodesLimit"];
 		if (nodes_limit <= 0)
 		{
-			nodes_limit = INT_MAX;
+			nodes_limit = NODES_LIMIT_MAX;
 		}
 
 		sync_cout << "info string initializing dnn threads" << sync_endl;

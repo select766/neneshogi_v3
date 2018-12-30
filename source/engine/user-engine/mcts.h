@@ -6,6 +6,11 @@
 #include "mt_queue.h"
 #include "mate-search_for_mcts.h"
 
+// 1ノードに対する探索回数(value_n_sum)の上限値。
+// 勝敗をfloatに蓄積するので、16777216を超えるとインクリメントしても増えなくなる問題が生じ、
+// むしろ探索結果が悪化してしまう。
+#define NODES_LIMIT_MAX 10000000
+
 class NodeHashEntry
 {
 public:
