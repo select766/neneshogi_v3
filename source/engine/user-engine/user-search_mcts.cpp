@@ -242,6 +242,35 @@ static vector<Move> display_pv(UCTNode *root, Position &rootPos)
 	return pv;
 }
 
+static UCTNode* make_initial_nodes(Position &rootPos)
+{
+	// ルートノードの作成
+	// ルートだけを作成するのはバッチサイズが埋まらない&直後に同じ浅いノードの評価が殺到して評価値がゆがむので、
+	// 幅優先探索でノードをまとめて評価を行い、置換表を埋めておく（backupはしない）
+	MCTSSearchInfo sei(cvt, request_queues[0 % request_queues.size()], response_queues[0], nullptr);
+	int n_put = 0;
+	UCTNode *root = mcts->make_root_with_children(rootPos, sei, n_put, batch_size);
+	int n_get = 0;
+	sync_cout << "info string put root children " << n_put << sync_endl;
+	while (n_get < n_put)
+	{
+		dnn_eval_obj *sentback;
+		sei.response_queue->pop(sentback);
+		mcts->backup_dnn(sentback, false);
+		delete sentback;
+		n_get++;
+	}
+	sync_cout << "info string evaluated root children " << n_put << sync_endl;
+	if (root->terminal)
+	{
+		// ルート局面にて以前詰みが見つかっているが、それだと指し手が決まらないのでそのフラグを解除して探索させる
+		sync_cout << "info string root is terminal (found mate)" << sync_endl;
+		root->terminal = false;
+	}
+
+	return root;
+}
+
 // 探索開始時に呼び出される。
 // この関数内で初期化を終わらせ、slaveスレッドを起動してThread::search()を呼び出す。
 // そのあとslaveスレッドを終了させ、ベストな指し手を返すこと。
@@ -281,33 +310,7 @@ void MainThread::think()
 	}
 	else if (!rootPos.is_mated())
 	{
-		// ルートノードの作成
-		MCTSSearchInfo sei(cvt, request_queues[thread_id() % request_queues.size()], response_queues[thread_id()], nullptr);
-		dnn_eval_obj *eobj = new dnn_eval_obj();
-		bool created;
-		UCTNode *root = mcts->make_root(rootPos, sei, eobj, created);
-		sync_cout << "info string created root " << created << " dnn " << sei.put_dnn_eval << sync_endl;
-		// DNN評価が生じた場合はその結果を待つ
-		if (sei.put_dnn_eval)
-		{
-			dnn_eval_obj *sentback;
-			sei.response_queue->pop(sentback);
-			mcts->backup_dnn(sentback);
-			delete sentback;
-			root->pprint();
-		}
-		else
-		{
-			delete eobj;
-		}
-		if (root->terminal)
-		{
-			// ルート局面にて以前詰みが見つかっているが、それだと指し手が決まらないのでそのフラグを解除して探索させる
-			sync_cout << "info string root is terminal (found mate)" << sync_endl;
-			root->terminal = false;
-
-		}
-
+		UCTNode* root = make_initial_nodes(rootPos);
 		// slaveスレッドで探索を開始
 		root_mate_found = false;
 		for (Thread* th : Threads)

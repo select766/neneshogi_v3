@@ -151,7 +151,7 @@ bool operator<(const dnn_move_index& left, const dnn_move_index& right) {
 	return left.prob > right.prob;
 }
 
-void MCTS::backup_dnn(dnn_eval_obj * eval_info)
+void MCTS::backup_dnn(dnn_eval_obj * eval_info, bool do_backup)
 {
 	mutex_.lock();//ここはunique_lockを使ってもいい
 	dnn_table_index &path = eval_info->index;
@@ -182,11 +182,17 @@ void MCTS::backup_dnn(dnn_eval_obj * eval_info)
 	}
 	leaf_node.score = score;
 
-	backup_tree(path, score);
+	if (do_backup)
+	{
+		backup_tree(path, score);
+	}
 	DupEvalChain *dec = leaf_node.dup_eval_chain;
 	while (dec != nullptr)
 	{
-		backup_tree(dec->path, score);
+		if (do_backup)
+		{
+			backup_tree(dec->path, score);
+		}
 		DupEvalChain *dec_next = dec->next;
 		delete dec;
 		dec = dec_next;
@@ -227,6 +233,68 @@ UCTNode * MCTS::make_root(Position & pos, MCTSSearchInfo & sei, dnn_eval_obj * e
 	}
 	mutex_.unlock();
 	return root;
+}
+
+UCTNode * MCTS::make_root_with_children(Position & pos, MCTSSearchInfo & sei, int &n_put, int max_put)
+{
+	mutex_.lock();
+	for (int i = 0; i < 5; i++)
+	{
+		make_root_with_children_recursive(i, pos, sei, n_put, max_put);
+	}
+	UCTNode* root = tt->find_entry(pos);
+	mutex_.unlock();
+	return root;
+}
+
+void MCTS::make_root_with_children_recursive(int depth, Position & pos, MCTSSearchInfo & sei, int &n_put, int max_put)
+{
+	if (n_put >= max_put)
+	{
+		return;
+	}
+	if (depth == 0)
+	{
+		// この局面の投入
+		bool created;
+		UCTNode* node = tt->find_or_create_entry(pos, created);
+		if (created)
+		{
+			// 新規子ノードなので、評価
+			float mate_score;
+			dnn_eval_obj *eval_info = new dnn_eval_obj();
+			eval_info->index.path_length = 1;
+			eval_info->index.path_indices[0] = node;
+			bool not_mate = enqueue_pos(pos, sei, eval_info, mate_score);
+			if (not_mate)
+			{
+				// 評価待ち
+				// 非同期に処理される
+				n_put++;
+			}
+			else
+			{
+				// 詰んでいて評価対象にならない
+				delete eval_info;
+			}
+		}
+		else
+		{
+			// すでにあった
+		}
+
+	}
+	else
+	{
+		// 子ノードを再帰的に列挙
+		for (auto m : MoveList<LEGAL>(pos))
+		{
+			StateInfo si;
+			pos.do_move(m, si);
+			make_root_with_children_recursive(depth - 1, pos, sei, n_put, max_put);
+			pos.undo_move(m);
+		}
+	}
 }
 
 UCTNode * MCTS::get_root(const Position & pos)

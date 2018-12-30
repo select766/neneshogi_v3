@@ -100,8 +100,9 @@ public:
 	~MCTS();
 	void search(UCTNode *root, Position &pos, MCTSSearchInfo &sei, dnn_eval_obj *eval_info);
 	// DNNの結果が得られた際のbackup処理
-	void backup_dnn(dnn_eval_obj *eval_info);
+	void backup_dnn(dnn_eval_obj *eval_info, bool do_backup=true);
 	UCTNode* make_root(Position &pos, MCTSSearchInfo &sei, dnn_eval_obj *eval_info, bool &created);
+	UCTNode * MCTS::make_root_with_children(Position & pos, MCTSSearchInfo & sei, int &n_put, int max_put);
 	UCTNode* get_root(const Position &pos);
 	Move get_bestmove(UCTNode *root, Position &pos);
 	void get_pv(UCTNode *root, Position &pos, std::vector<Move> &pv, float &winrate);
@@ -124,7 +125,7 @@ private:
 	size_t select_edge(UCTNode *node);
 	bool enqueue_pos(const Position &pos, MCTSSearchInfo &sei, dnn_eval_obj *eval_info, float &score);
 	void get_pv_recursive(UCTNode *node, Position &pos, std::vector<Move> &pv, float &winrate, bool root);
-
+	void MCTS::make_root_with_children_recursive(int depth, Position & pos, MCTSSearchInfo & sei, int &n_put, int max_put);
 
 	std::mutex mutex_;//置換表のロック
 	MCTSTT* tt;//置換表(MCTSオブジェクトと1対1対応)
