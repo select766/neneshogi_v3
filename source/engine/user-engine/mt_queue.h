@@ -16,6 +16,7 @@ https://github.com/juanchopanza/cppblog/blob/master/Concurrency/Queue/Queue.h
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <atomic>
 
 template <typename T>
 class MTQueue
@@ -65,6 +66,11 @@ public:
 			cond_.wait(mlock);
 		}
 		size_t pop_count = 0;
+		size_t bslimit = batch_size_limit;
+		if (bslimit > 0 && max_size > bslimit)
+		{
+			max_size = bslimit;
+		}
 		for (size_t i = 0; i < max_size; i++)
 		{
 			items[i] = queue_.front();
@@ -87,6 +93,11 @@ public:
 			return 0;
 		}
 		size_t pop_count = 0;
+		size_t bslimit = batch_size_limit;
+		if (bslimit > 0 && max_size > bslimit)
+		{
+			max_size = bslimit;
+		}
 		for (size_t i = 0; i < max_size; i++)
 		{
 			items[i] = queue_.front();
@@ -119,6 +130,12 @@ public:
 		mlock.unlock();
 		cond_.notify_one();
 	}
+
+	void set_batch_size_limit(size_t limit)
+	{
+		batch_size_limit = limit;
+	}
+
 	MTQueue() = default;
 	MTQueue(const MTQueue&) = delete;            // disable copying
 	MTQueue& operator=(const MTQueue&) = delete; // disable assignment
@@ -127,6 +144,7 @@ private:
 	std::queue<T> queue_;
 	std::mutex mutex_;
 	std::condition_variable cond_;
+	std::atomic_size_t batch_size_limit;
 };
 
 #endif

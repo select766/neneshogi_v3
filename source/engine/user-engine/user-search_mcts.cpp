@@ -15,6 +15,9 @@ static vector<Move> root_mate_pv;
 static atomic_bool root_mate_found = false;//ルート局面からの詰み探索で詰みがあった場合
 static int nodes_limit = NODES_LIMIT_MAX;//探索ノード数の上限
 static bool already_initialized = false;//一度Search::clearで初期化済みかどうか。
+static atomic_size_t pending_limit = 1;//DNN評価待ちの要素数の最大数(スレッドごと)
+static int pending_limit_factor = 16;
+static size_t normal_slave_threads = 1;//通常探索をするslaveスレッド数
 
 // 定跡の指し手を選択するモジュール
 static Book::BookMoveSelector book;
@@ -159,10 +162,12 @@ void  Search::clear()
 			auto ms = new MateEngine::MateSearchForMCTS();
 			ms->init(128, MAX_PLY);
 			root_mate_searcher = ms;
+			normal_slave_threads = threads - 2;
 		}
 		else
 		{
 			root_mate_thread_id = -1;
+			normal_slave_threads = threads - 1;
 		}
 
 		// -----------------------
@@ -271,6 +276,13 @@ static UCTNode* make_initial_nodes(Position &rootPos)
 	return root;
 }
 
+void update_pending_limit(UCTNode *root)
+{
+	size_t plimit_cand = pending_limit_factor * log2(std::max(root->value_n_sum, 1));
+	plimit_cand = std::min(std::max(plimit_cand, (size_t)16), batch_size * n_gpu_threads * 2);
+	pending_limit = plimit_cand / normal_slave_threads;
+}
+
 // 探索開始時に呼び出される。
 // この関数内で初期化を終わらせ、slaveスレッドを起動してThread::search()を呼び出す。
 // そのあとslaveスレッドを終了させ、ベストな指し手を返すこと。
@@ -311,6 +323,7 @@ void MainThread::think()
 	else if (!rootPos.is_mated())
 	{
 		UCTNode* root = make_initial_nodes(rootPos);
+		update_pending_limit(root);
 		// slaveスレッドで探索を開始
 		root_mate_found = false;
 		for (Thread* th : Threads)
@@ -321,12 +334,7 @@ void MainThread::think()
 		// masterは探索終了タイミングの決定のみ行う
 		while (!Threads.stop)
 		{
-			sleep(10);
-			if (lastPvTime + pv_interval < Time.elapsed())
-			{
-				display_pv(root, rootPos);
-				lastPvTime += pv_interval;
-			}
+			update_pending_limit(root);
 
 			// 探索終了条件判定
 			if (!Threads.ponder)
@@ -341,6 +349,15 @@ void MainThread::think()
 					Threads.stop = true;
 				}
 			}
+
+			if (lastPvTime + pv_interval < Time.elapsed())
+			{
+				display_pv(root, rootPos);
+				lastPvTime += pv_interval;
+				sync_cout << "info string pending_limit " << pending_limit << sync_endl;
+			}
+
+			sleep(10);
 		}
 
 		// slaveスレッドが探索を終わるのを待つ
@@ -413,7 +430,7 @@ void Thread::search()
 	MTQueue<dnn_eval_obj*> *request_queue = request_queues[thread_id() % request_queues.size()];
 	while (!Threads.stop || (n_put != n_get))
 	{
-		bool enable_search = !Threads.stop && (n_put - n_get < batch_size * 2);
+		bool enable_search = !Threads.stop && (n_put - n_get < pending_limit);
 		if (enable_search)
 		{
 			// 探索
