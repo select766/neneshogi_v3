@@ -5,13 +5,8 @@
 #include "dnn_thread.h"
 #include "gpu_lock.h"
 
-vector<MTQueue<dnn_eval_obj*>*> request_queues;
 static MCTS *mcts = nullptr;
-DNNConverter *cvt = nullptr;
 static vector<MTQueue<dnn_eval_obj*>*> response_queues;
-int batch_size;
-int n_gpu_threads = 0;//GPUスレッドの数(GPU数と必ずしも一致しない)
-static vector<std::thread*> dnn_threads;
 static vector<MateEngine::MateSearchForMCTS*> leaf_mate_searchers;
 static MateEngine::MateSearchForMCTS *root_mate_searcher = nullptr;
 static int pv_interval;//PV表示間隔[ms]
@@ -122,58 +117,23 @@ void  Search::clear()
 		}
 
 		sync_cout << "info string initializing dnn threads" << sync_endl;
-		// モデルのロード
-		// 本来はファイル名からフォーマットを推論したい
-		// 将棋所からは日本語WindowsだとオプションがCP932で来る。mbstowcsにそれを認識させ、日本語ファイル名を正しく変換
-		setlocale(LC_ALL, "");
-		int format_board = (int)Options["DNNFormatBoard"], format_move = (int)Options["DNNFormatMove"];
-		wchar_t model_path[1024];
-		string evaldir = Options["EvalDir"];
-		wchar_t evaldir_w[1024];
-		mbstowcs(evaldir_w, evaldir.c_str(), sizeof(model_path) / sizeof(model_path[0]) - 1); // C4996
-		swprintf(model_path, sizeof(model_path) / sizeof(model_path[0]), L"%s/nene_%d_%d.cmf", evaldir_w, format_board, format_move);
-		// デバイス数だけモデルをロードし各デバイスに割り当てる
+		vector<int> gpuIds;
+		string evalDir = Options["EvalDir"];
 		stringstream ss(Options["GPU"]);//カンマ区切りでGPU番号を並べる
 		string item;
 		while (getline(ss, item, ',')) {
 			if (!item.empty()) {
 				int gpu_id = stoi(item);
-				CNTK::DeviceDescriptor device = gpu_id >= 0 ? CNTK::DeviceDescriptor::GPUDevice((unsigned int)gpu_id) : CNTK::DeviceDescriptor::CPUDevice();
-				CNTK::FunctionPtr modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
-				device_models.push_back(DeviceModel(device, modelFunc));
+				gpuIds.push_back(gpu_id);
 			}
 		}
-		n_gpu_threads = device_models.size();
-		cvt = new DNNConverter(format_board, format_move);
+		start_dnn_threads(evalDir, (int)Options["DNNFormatBoard"], (int)Options["DNNFormatMove"], gpuIds);
 
 		// スレッド間キュー初期化
 		int threads = (int)Options["Threads"];
 		for (int i = 0; i < threads; i++)
 		{
 			response_queues.push_back(new MTQueue<dnn_eval_obj*>());
-		}
-#ifdef MULTI_REQUEST_QUEUE
-		for (size_t i = 0; i < n_gpu_threads; i++)
-		{
-			// リクエストキューをGPUスレッド分立てる
-			request_queues.push_back(new MTQueue<dnn_eval_obj*>());
-		}
-#else
-		// リクエストキューは1個だけ
-		request_queues.push_back(new MTQueue<dnn_eval_obj*>());
-#endif // MULTI_REQUEST_QUEUE
-
-
-		// 評価スレッドを立てる
-		for (int i = 0; i < n_gpu_threads; i++)
-		{
-			dnn_threads.push_back(new std::thread(dnn_thread_main, i));
-		}
-
-		// スレッドの動作開始(DNNの初期化)まで待つ
-		while (n_dnn_thread_initalized < dnn_threads.size())
-		{
-			sleep(1);
 		}
 
 		// 末端詰み探索の初期化
@@ -358,7 +318,7 @@ void MainThread::think()
 		// masterは探索終了タイミングの決定のみ行う
 		while (!Threads.stop)
 		{
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			sleep(10);
 			if (lastPvTime + pv_interval < Time.elapsed())
 			{
 				display_pv(root, rootPos);
@@ -475,7 +435,7 @@ void Thread::search()
 					// ヒューリスティックに、短い時間待機
 					// もっと洗練された方法が欲しい
 					leaf_dup++;
-					std::this_thread::sleep_for(std::chrono::milliseconds(1));
+					sleep(1);
 				}
 			}
 

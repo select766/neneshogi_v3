@@ -6,13 +6,63 @@
 #include "dnn_eval_obj.h"
 #include "dnn_thread.h"
 
-vector<DeviceModel> device_models;
+vector<MTQueue<dnn_eval_obj*>*> request_queues;
+static vector<std::thread*> dnn_threads;
+DNNConverter *cvt = nullptr;
+size_t batch_size = 0;
+size_t n_gpu_threads = 0;//GPUスレッドの数(GPU数と必ずしも一致しない)
 float policy_temperature = 1.0;
 float value_temperature = 1.0;
 float value_scale = 1.0;
-std::atomic_int n_dnn_thread_initalized = 0;
+static std::atomic_int n_dnn_thread_initalized = 0;
 std::atomic_int n_dnn_evaled_samples = 0;
 std::atomic_int n_dnn_evaled_batches = 0;
+
+static void dnn_thread_main(size_t worker_idx, CNTK::DeviceDescriptor device, CNTK::FunctionPtr modelFunc);
+
+void start_dnn_threads(string& evalDir, int format_board, int format_move, vector<int>& gpuIds)
+{
+	cvt = new DNNConverter(format_board, format_move);
+	// モデルのロード
+	// 本来はファイル名からフォーマットを推論したい
+	// 将棋所からは日本語WindowsだとオプションがCP932で来る。mbstowcsにそれを認識させ、日本語ファイル名を正しく変換
+	// デバイス数だけモデルをロードし各デバイスに割り当てる
+	setlocale(LC_ALL, "");
+	wchar_t model_path[1024];
+	wchar_t evaldir_w[1024];
+	size_t n_chars;
+	if (mbstowcs_s(&n_chars, evaldir_w, sizeof(evaldir_w) / sizeof(evaldir_w[0]), evalDir.c_str(), _TRUNCATE) != 0)
+	{
+		throw runtime_error("Failed converting model path");
+	}
+	swprintf(model_path, sizeof(model_path) / sizeof(model_path[0]), L"%s/nene_%d_%d.cmf", evaldir_w, format_board, format_move);
+	n_gpu_threads = gpuIds.size();
+#ifdef MULTI_REQUEST_QUEUE
+	for (size_t i = 0; i < n_gpu_threads; i++)
+	{
+		// リクエストキューをGPUスレッド分立てる
+		request_queues.push_back(new MTQueue<dnn_eval_obj*>());
+	}
+#else
+	// リクエストキューは1個だけ
+	request_queues.push_back(new MTQueue<dnn_eval_obj*>());
+#endif // MULTI_REQUEST_QUEUE
+
+	// 評価スレッドを立てる
+	for (size_t i = 0; i < gpuIds.size(); i++)
+	{
+		int gpu_id = gpuIds[i];
+		CNTK::DeviceDescriptor device = gpu_id >= 0 ? CNTK::DeviceDescriptor::GPUDevice((unsigned int)gpu_id) : CNTK::DeviceDescriptor::CPUDevice();
+		CNTK::FunctionPtr modelFunc = CNTK::Function::Load(model_path, device, CNTK::ModelFormat::CNTKv2);
+		dnn_threads.push_back(new std::thread(dnn_thread_main, i, device, modelFunc));
+	}
+
+	// スレッドの動作開始(DNNの初期化)まで待つ
+	while (n_dnn_thread_initalized < dnn_threads.size())
+	{
+		sleep(1);
+	}
+}
 
 // CNTKによる評価。
 // なぜか関数を分けないとスタック破壊らしき挙動が起きる。softmax計算がおかしな結果になる等。
@@ -45,20 +95,14 @@ static void do_eval(CNTK::FunctionPtr &modelFunc, CNTK::DeviceDescriptor &device
 	valueVal->CopyVariableValueTo(valueVar, valueData);
 }
 
-void dnn_thread_main(int worker_idx)
+static void dnn_thread_main(size_t worker_idx, CNTK::DeviceDescriptor device, CNTK::FunctionPtr modelFunc)
 {
 	sync_cout << "info string from dnn thread " << worker_idx << sync_endl;
-	auto &device_model = device_models[worker_idx];
-	auto &device = device_model.device;
-	auto &modelFunc = device_model.modelFunc;
 	MTQueue<dnn_eval_obj*> *request_queue = request_queues[worker_idx % request_queues.size()];
-	
+
 	auto input_shape = cvt->board_shape();
 	int sample_size = accumulate(input_shape.begin(), input_shape.end(), 1, std::multiplies<int>());
-	
-	sync_cout << "info string dnn batch size " << batch_size << sync_endl;
 
-	int ctr = 0;
 	vector<float> inputData(sample_size * batch_size);
 	if (true)
 	{

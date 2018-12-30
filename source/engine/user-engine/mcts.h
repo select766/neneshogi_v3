@@ -121,7 +121,7 @@ private:
 	// 新規展開ノードがmateだったときの処理
 	void update_on_mate(dnn_table_index &path, float mate_score);
 	// UCBに従い次に探索する子ノードのインデックスを選択する
-	int select_edge(UCTNode *node);
+	size_t select_edge(UCTNode *node);
 	bool enqueue_pos(const Position &pos, MCTSSearchInfo &sei, dnn_eval_obj *eval_info, float &score);
 	void get_pv_recursive(UCTNode *node, Position &pos, std::vector<Move> &pv, float &winrate, bool root);
 

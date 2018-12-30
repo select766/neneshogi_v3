@@ -327,7 +327,7 @@ void MCTS::search_recursive(UCTNode * node, Position & pos, MCTSSearchInfo & sei
 	}
 
 	// エッジ選択
-	int edge = select_edge(node);
+	size_t edge = select_edge(node);
 
 	// virtual loss加算
 	node->value_n[edge] += virtual_loss;
@@ -341,7 +341,7 @@ void MCTS::search_recursive(UCTNode * node, Position & pos, MCTSSearchInfo & sei
 	// 子ノードを選択するか生成
 	bool created;
 	UCTNode* child_node = tt->find_or_create_entry(pos, created);
-	eval_info->index.path_child_indices[eval_info->index.path_length - 1] = edge;
+	eval_info->index.path_child_indices[eval_info->index.path_length - 1] = (uint16_t)edge;
 	eval_info->index.path_indices[eval_info->index.path_length] = child_node;
 	eval_info->index.path_length++;
 
@@ -436,10 +436,10 @@ void MCTS::update_on_mate(dnn_table_index & path, float mate_score)
 	}
 }
 
-int MCTS::select_edge(UCTNode * node)
+size_t MCTS::select_edge(UCTNode * node)
 {
 	float n_sum_sqrt = sqrt((float)node->value_n_sum) + 0.001F;//完全に0だと最初の1手が事前確率に沿わなくなる
-	int best_index = 0;
+	size_t best_index = 0;
 	float best_value = -100.0F;
 	float w_sum = 0.0F;
 	for (size_t i = 0; i < node->n_children; i++)
@@ -523,7 +523,7 @@ void MCTS::get_pv_recursive(UCTNode * node, Position & pos, std::vector<Move>& p
 	int best_n = -1;
 	Move bestMove = MOVE_RESIGN;
 	int best_child_i = 0;
-	for (size_t i = 0; i < node->n_children; i++)
+	for (int i = 0; i < node->n_children; i++)
 	{
 		if (node->value_n[i] > best_n)
 		{
