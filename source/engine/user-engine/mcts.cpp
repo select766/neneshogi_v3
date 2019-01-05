@@ -302,14 +302,14 @@ UCTNode * MCTS::get_root(const Position & pos)
 	return tt->find_entry(pos);
 }
 
-Move MCTS::get_bestmove(UCTNode * root, Position & pos)
+Move MCTS::get_bestmove(UCTNode * root, Position & pos, bool policy_only)
 {
 	Move bestMove = MOVE_RESIGN;
 	float bestScore = -1;
 	for (size_t i = 0; i < root->n_children; i++)
 	{
 		// 訪問回数で選択。それで決まらない場合は事前確率(0~1)で決める。
-		float score = root->value_n[i] + root->value_p[i];
+		float score = policy_only ? root->value_p[i] : root->value_n[i] + root->value_p[i];
 		if (score > bestScore)
 		{
 			bestScore = score;

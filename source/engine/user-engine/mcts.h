@@ -104,7 +104,7 @@ public:
 	UCTNode* make_root(Position &pos, MCTSSearchInfo &sei, dnn_eval_obj *eval_info, bool &created);
 	UCTNode * MCTS::make_root_with_children(Position & pos, MCTSSearchInfo & sei, int &n_put, int max_put);
 	UCTNode* get_root(const Position &pos);
-	Move get_bestmove(UCTNode *root, Position &pos);
+	Move get_bestmove(UCTNode *root, Position &pos, bool policy_only=false);
 	void get_pv(UCTNode *root, Position &pos, std::vector<Move> &pv, float &winrate);
 	// ハッシュの使用率を千分率で返す
 	int get_hashfull();

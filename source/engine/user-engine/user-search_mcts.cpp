@@ -18,6 +18,7 @@ static bool already_initialized = false;//一度Search::clearで初期化済み�
 static atomic_size_t pending_limit = 1;//DNN評価待ちの要素数の最大数(スレッドごと)
 static int pending_limit_factor = 16;
 static size_t normal_slave_threads = 1;//通常探索をするslaveスレッド数
+static bool policy_only = false;
 
 // 定跡の指し手を選択するモジュール
 static Book::BookMoveSelector book;
@@ -90,6 +91,7 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["LeafMateSearchDepth"] << Option(0, 0, 16);//末端局面での詰み探索深さ(0なら探索しない)
 	o["MCTSHash"] << Option(1024, 1, 1048576);//MCTSのハッシュテーブルサイズ(MB)
 	o["RootMateSearch"] << Option(false);//ルート局面からの詰み探索専用スレッドを用いるか(Threadsのうちの1つが使われる)
+	o["PolicyOnly"] << Option(false);//policy評価だけで指し手を決定し、探索を行わない
 }
 
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
@@ -118,6 +120,7 @@ void  Search::clear()
 		{
 			nodes_limit = NODES_LIMIT_MAX;
 		}
+		policy_only = (bool)Options["PolicyOnly"];
 
 		sync_cout << "info string initializing dnn threads" << sync_endl;
 		vector<int> gpuIds;
@@ -320,6 +323,11 @@ void MainThread::think()
 			sleep(1);
 		}
 	}
+	else if (policy_only)
+	{
+		UCTNode* root = make_initial_nodes(rootPos);
+		bestMove = mcts->get_bestmove(root, rootPos, true);
+	}
 	else if (!rootPos.is_mated())
 	{
 		UCTNode* root = make_initial_nodes(rootPos);
@@ -341,7 +349,7 @@ void MainThread::think()
 			{
 				// Ponder中は探索を止めない。
 				// Ponderが外れた時、Threads.ponder==trueのままThreads.stop==trueとなる
-				if (Time.elapsed() >= Time.optimum() || root->value_n_sum > nodes_limit || root_mate_found)
+				if (Time.elapsed() >= Time.optimum() || root->value_n_sum >= nodes_limit || root_mate_found)
 				{
 					// 思考時間が来たら、新たな探索は停止する。
 					// ただし、評価途中のものの結果を受け取ってからbestmoveを決める。
@@ -428,9 +436,10 @@ void Thread::search()
 	int n_put = 0, n_get = 0, leaf_dup = 0, leaf_mate_search_found = 0;
 	MTQueue<dnn_eval_obj*> *response_queue = response_queues[thread_id()];
 	MTQueue<dnn_eval_obj*> *request_queue = request_queues[thread_id() % request_queues.size()];
+	bool block_until_all_get = false;
 	while (!Threads.stop || (n_put != n_get))
 	{
-		bool enable_search = !Threads.stop && (n_put - n_get < pending_limit);
+		bool enable_search = !Threads.stop && (n_put - n_get < pending_limit) && !block_until_all_get;
 		if (enable_search)
 		{
 			// 探索
@@ -456,12 +465,17 @@ void Thread::search()
 					// もっと洗練された方法が欲しい
 					leaf_dup++;
 					sleep(1);
+					//if (n_put > n_get)
+					//{
+					//	block_until_all_get = true;
+					//	enable_search = false;
+					//}
 				}
 			}
 
 		}
 
-		if (true)
+		if (n_put > n_get)
 		{
 			dnn_eval_obj *eobj = nullptr;
 			if (enable_search)
@@ -478,6 +492,10 @@ void Thread::search()
 				mcts->backup_dnn(eobj);
 				delete eobj;
 				n_get++;
+				if (n_put == n_get)
+				{
+					block_until_all_get = false;
+				}
 			}
 		}
 	}
