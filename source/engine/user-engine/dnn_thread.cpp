@@ -119,6 +119,10 @@ static void dnn_thread_main(size_t worker_idx, CNTK::DeviceDescriptor device, CN
 	while (true)
 	{
 		size_t item_count = request_queue->pop_batch(eval_targets, batch_size);
+#if 1
+		// 実際のアイテム数で毎回バッチサイズを変える場合
+		vector<float> inputData(sample_size * item_count);
+#endif
 		// eval_targetsをDNN評価
 		for (size_t i = 0; i < item_count; i++)
 		{

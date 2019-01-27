@@ -19,6 +19,8 @@ static atomic_size_t pending_limit = 1;//DNN評価待ちの要素数の最大数
 static int pending_limit_factor = 16;
 static size_t normal_slave_threads = 1;//通常探索をするslaveスレッド数
 static bool policy_only = false;
+static int limited_batch_size = 1;
+static int limited_until = 0;
 
 // 定跡の指し手を選択するモジュール
 static Book::BookMoveSelector book;
@@ -92,6 +94,8 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["MCTSHash"] << Option(1024, 1, 1048576);//MCTSのハッシュテーブルサイズ(MB)
 	o["RootMateSearch"] << Option(false);//ルート局面からの詰み探索専用スレッドを用いるか(Threadsのうちの1つが使われる)
 	o["PolicyOnly"] << Option(false);//policy評価だけで指し手を決定し、探索を行わない
+	o["LimitedBatchSize"] << Option(16, 1, 65536);
+	o["LimitedUntil"] << Option(0, 0, 1000000);//ルートのvalue_n_sumがこの値未満の時、バッチサイズがLimitedBatchSizeだとみなして評価待ち要素数を制限する
 }
 
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
@@ -109,6 +113,8 @@ void  Search::clear()
 		int hash_size_mb = (int)Options["MCTSHash"];
 		mcts = new MCTS(MCTSTT::calc_uct_hash_size(hash_size_mb));
 		batch_size = (int)Options["BatchSize"];
+		limited_batch_size = (int)Options["LimitedBatchSize"];
+		limited_until = (int)Options["LimitedUntil"];
 		pv_interval = (int)Options["PvInterval"];
 		if (pv_interval == 0)
 		{
@@ -253,6 +259,7 @@ static vector<Move> display_pv(UCTNode *root, Position &rootPos)
 static UCTNode* make_initial_nodes(Position &rootPos)
 {
 	// ルートノードの作成
+#if 0
 	// ルートだけを作成するのはバッチサイズが埋まらない&直後に同じ浅いノードの評価が殺到して評価値がゆがむので、
 	// 幅優先探索でノードをまとめて評価を行い、置換表を埋めておく（backupはしない）
 	MCTSSearchInfo sei(cvt, request_queues[0 % request_queues.size()], response_queues[0], nullptr);
@@ -269,6 +276,27 @@ static UCTNode* make_initial_nodes(Position &rootPos)
 		n_get++;
 	}
 	sync_cout << "info string evaluated root children " << n_put << sync_endl;
+#else
+	// ルートノードだけ作る
+	MCTSSearchInfo sei(cvt, request_queues[0 % request_queues.size()], response_queues[0], nullptr);
+	dnn_eval_obj *eobj = new dnn_eval_obj();
+	bool created;
+	UCTNode *root = mcts->make_root(rootPos, sei, eobj, created);
+	sync_cout << "info string created root " << created << " dnn " << sei.put_dnn_eval << sync_endl;
+	// DNN評価が生じた場合はその結果を待つ
+	if (sei.put_dnn_eval)
+	{
+		dnn_eval_obj *sentback;
+		sei.response_queue->pop(sentback);
+		mcts->backup_dnn(sentback);
+		delete sentback;
+		root->pprint();
+	}
+	else
+	{
+		delete eobj;
+	}
+#endif
 	if (root->terminal)
 	{
 		// ルート局面にて以前詰みが見つかっているが、それだと指し手が決まらないのでそのフラグを解除して探索させる
@@ -281,8 +309,19 @@ static UCTNode* make_initial_nodes(Position &rootPos)
 
 void update_pending_limit(UCTNode *root)
 {
+	size_t plimit_cand;
+	if (root->value_n_sum < limited_until)
+	{
+		plimit_cand = limited_batch_size * n_gpu_threads * 2;
+	}
+	else
+	{
+		plimit_cand = batch_size * n_gpu_threads * 2;
+	}
+#if 0
 	size_t plimit_cand = pending_limit_factor * log2(std::max(root->value_n_sum, 1));
 	plimit_cand = std::min(std::max(plimit_cand, (size_t)16), batch_size * n_gpu_threads * 2);
+#endif
 	pending_limit = plimit_cand / normal_slave_threads;
 }
 
@@ -496,6 +535,8 @@ void Thread::search()
 				{
 					block_until_all_get = false;
 				}
+
+				update_pending_limit(root);//実験のためバッチサイズ変更が遅延しないようここでも処理
 			}
 		}
 	}
