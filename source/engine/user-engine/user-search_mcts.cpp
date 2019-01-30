@@ -96,6 +96,8 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["PolicyOnly"] << Option(false);//policy評価だけで指し手を決定し、探索を行わない
 	o["LimitedBatchSize"] << Option(16, 1, 65536);
 	o["LimitedUntil"] << Option(0, 0, 1000000);//ルートのvalue_n_sumがこの値未満の時、バッチサイズがLimitedBatchSizeだとみなして評価待ち要素数を制限する
+	o["VirtualLoss"] << Option(1, 1, 1024);
+	o["CPuct"] << Option(100, 1, 10000);//c_puctの100倍
 }
 
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
@@ -112,6 +114,8 @@ void  Search::clear()
 		gpu_lock_thread_start();
 		int hash_size_mb = (int)Options["MCTSHash"];
 		mcts = new MCTS(MCTSTT::calc_uct_hash_size(hash_size_mb));
+		mcts->virtual_loss = (int)Options["VirtualLoss"];
+		mcts->c_puct = ((int)Options["CPuct"]) * 0.01F;
 		batch_size = (int)Options["BatchSize"];
 		limited_batch_size = (int)Options["LimitedBatchSize"];
 		limited_until = (int)Options["LimitedUntil"];
