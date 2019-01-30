@@ -469,7 +469,7 @@ void MCTS::backup_tree(dnn_table_index & path, float leaf_score)
 		score = score * -0.99F;//逃げる時はより長い詰み筋、追うときは短い詰み筋を選ぶよう調整
 		UCTNode &inner_node = *path.path_indices[i];
 		uint16_t edge = path.path_child_indices[i];
-		int new_value_n = inner_node.value_n[edge] + 1 - virtual_loss;
+		float new_value_n = inner_node.value_n[edge] + 1 - virtual_loss;
 		inner_node.value_n[edge] = new_value_n;
 		float new_value_w = inner_node.value_w[edge] + score + virtual_loss;
 		inner_node.value_w[edge] = new_value_w;
@@ -517,7 +517,7 @@ size_t MCTS::select_edge(UCTNode * node)
 	float mean_w = w_sum / node->value_n_sum;//1度も探索してないノードの評価値替わり
 	for (size_t i = 0; i < node->n_children; i++)
 	{
-		int value_n = node->value_n[i];
+		float value_n = node->value_n[i];
 		float value_u = node->value_p[i] / (value_n + 1) * c_puct * n_sum_sqrt;
 		float value_q = value_n > 0 ? node->value_w[i] / value_n : mean_w;
 		float value_sum = value_q + value_u;
@@ -588,7 +588,7 @@ void MCTS::get_pv_recursive(UCTNode * node, Position & pos, std::vector<Move>& p
 		}
 		return;
 	}
-	int best_n = -1;
+	float best_n = -1;
 	Move bestMove = MOVE_RESIGN;
 	int best_child_i = 0;
 	for (int i = 0; i < node->n_children; i++)

@@ -29,14 +29,14 @@ public:
 class UCTNode
 {
 public:
-	int value_n_sum;
+	float value_n_sum;
 	bool terminal;
 	bool evaled;
 	DupEvalChain *dup_eval_chain;//複数回評価が呼ばれたとき、ここにリストをつなげて各経路でbackupする。
 	float score;
 	int n_children;
 	Move move_list[MAX_UCT_CHILDREN];
-	int value_n[MAX_UCT_CHILDREN];
+	float value_n[MAX_UCT_CHILDREN];
 	float value_w[MAX_UCT_CHILDREN];
 	float value_p[MAX_UCT_CHILDREN];
 
@@ -112,7 +112,7 @@ public:
 	void clear();
 
 	float c_puct;
-	int virtual_loss;
+	float virtual_loss;
 private:
 	void search_recursive(UCTNode *root, Position &pos, MCTSSearchInfo &sei, dnn_eval_obj *eval_info);
 	// treeのbackup操作。
