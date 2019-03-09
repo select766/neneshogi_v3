@@ -21,6 +21,7 @@ static size_t normal_slave_threads = 1;//通常探索をするslaveスレッド�
 static bool policy_only = false;
 static int limited_batch_size = 1;
 static int limited_until = 0;
+static int print_status_interval = 0;
 
 // 定跡の指し手を選択するモジュール
 static Book::BookMoveSelector book;
@@ -99,6 +100,7 @@ void USI::extra_option(USI::OptionsMap & o)
 	// o["VirtualLoss"] << Option(1, 1, 1024);
 	o["VirtualLoss"] << Option("1");
 	o["CPuct"] << Option(100, 1, 10000);//c_puctの100倍
+	o["PrintStatusInterval"] << Option(0, 0, 1000000);//ルートノードの状態表示間隔[nodes]
 }
 
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
@@ -122,6 +124,7 @@ void  Search::clear()
 		limited_batch_size = (int)Options["LimitedBatchSize"];
 		limited_until = (int)Options["LimitedUntil"];
 		pv_interval = (int)Options["PvInterval"];
+		print_status_interval = (int)Options["PrintStatusInterval"];
 		if (pv_interval == 0)
 		{
 			//PVの定期的な表示をしない
@@ -331,6 +334,26 @@ void update_pending_limit(UCTNode *root)
 	pending_limit = plimit_cand / normal_slave_threads;
 }
 
+// 探索途中でのルートノードからの各指し手情報のデバッグプリント
+void print_search_status(UCTNode *root)
+{
+	// 自動処理したいのでjsonでパースできるようにする
+	sync_cout << "info string PSS {";
+	std::cout << "\"moves\":[";
+	for (int i = 0; i < root->n_children; i++)
+	{
+		if (i > 0)
+		{
+			std::cout << ",";
+		}
+		std::cout << "{\"move\":\"" << root->move_list[i] << "\",";
+		std::cout << "\"n\":" << root->value_n[i] << ",\"p\":" << root->value_p[i]
+			<< ",\"w\":" << root->value_w[i] << "}";
+	}
+	std::cout << "]}";
+	std::cout << sync_endl;
+}
+
 // 探索開始時に呼び出される。
 // この関数内で初期化を終わらせ、slaveスレッドを起動してThread::search()を呼び出す。
 // そのあとslaveスレッドを終了させ、ベストな指し手を返すこと。
@@ -384,6 +407,7 @@ void MainThread::think()
 				th->start_searching();
 
 		int lastPvTime = Time.elapsed();
+		int next_status_print_nodes = 0;
 		// masterは探索終了タイミングの決定のみ行う
 		while (!Threads.stop)
 		{
@@ -408,6 +432,14 @@ void MainThread::think()
 				display_pv(root, rootPos);
 				lastPvTime += pv_interval;
 				sync_cout << "info string pending_limit " << pending_limit << sync_endl;
+			}
+
+			if (print_status_interval > 0 && next_status_print_nodes <= root->value_n_sum)
+			{
+				// 置換表に最初からルートノードがあり、初回からroot_node.value_n_sumが大きい場合あり
+				// root_node.value_n_sumより大きい最小のprint_statusの倍数
+				print_search_status(root);
+				next_status_print_nodes = (root->value_n_sum + print_status_interval) / print_status_interval * print_status_interval;
 			}
 
 			sleep(10);
@@ -502,7 +534,7 @@ void Thread::search()
 			else
 			{
 				delete eobj;
-				if (sei.leaf_dup)
+				if (sei.leaf_dup && (root->value_n_sum < limited_until))
 				{
 					// すでに評価中の局面に到達
 					// 木構造が狭い間に無理にたくさん評価しようとすると訪問回数が異常になるので
