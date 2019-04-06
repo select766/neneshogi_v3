@@ -22,6 +22,7 @@ static bool policy_only = false;
 static int limited_batch_size = 1;
 static int limited_until = 0;
 static int print_status_interval = 0;
+static int early_stop_prob = 0;
 
 // 定跡の指し手を選択するモジュール
 static Book::BookMoveSelector book;
@@ -101,6 +102,7 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["VirtualLoss"] << Option("1");
 	o["CPuct"] << Option(100, 1, 10000);//c_puctの100倍
 	o["PrintStatusInterval"] << Option(0, 0, 1000000);//ルートノードの状態表示間隔[nodes]
+	o["EarlyStopProb"] << Option(0, 0, 100);//指し手変化確率[%]がこれを下回ったら、予定時間にかかわらず指す
 }
 
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
@@ -125,6 +127,7 @@ void  Search::clear()
 		limited_until = (int)Options["LimitedUntil"];
 		pv_interval = (int)Options["PvInterval"];
 		print_status_interval = (int)Options["PrintStatusInterval"];
+		early_stop_prob = (int)Options["EarlyStopProb"];
 		if (pv_interval == 0)
 		{
 			//PVの定期的な表示をしない
@@ -354,6 +357,46 @@ void print_search_status(UCTNode *root)
 	std::cout << sync_endl;
 }
 
+// 探索状況を見て、早期終了するかどうか判定
+// 指し手変化がなさそうな場合に終了する。
+bool decide_early_stop(UCTNode *root)
+{
+	int elapsed_ms = Time.elapsed();
+	if (elapsed_ms <= Time.minimum())
+	{
+		// 一定時間以上考える
+		return false;
+	}
+	int nps = (int)((long long)n_dnn_evaled_samples * 1000 / max(elapsed_ms, 1));
+	int remaining_ms = Time.optimum() - Time.elapsed();
+	float estimated_future_nodes = nps * remaining_ms / 1000.0F;
+	float cur_nodes = root->value_n_sum;
+	if (cur_nodes < limited_until)
+	{
+		// 一定ノード数以上探索する
+		return false;
+	}
+
+	float max_nodes = -1;
+	for (size_t i = 0; i < root->n_children; i++)
+	{
+		if (root->value_n[i] > max_nodes)
+		{
+			max_nodes = root->value_n[i];
+		}
+	}
+
+	float pv_prob = max_nodes / cur_nodes;
+	// PVの確率、現在ノード数、今後探索できそうなノード数から、指し手が変化する確率を推定
+	float change_score = pv_prob * -5.32F + log2f(cur_nodes / 1024) * -0.305F + log2f(estimated_future_nodes / 1024) * 0.376F;
+	float change_prob = 1.0F / (expf(-change_score) + 1.0F);
+	if (change_prob < (early_stop_prob / 100.0F))
+	{
+		return true;
+	}
+	return false;
+}
+
 // 探索開始時に呼び出される。
 // この関数内で初期化を終わらせ、slaveスレッドを起動してThread::search()を呼び出す。
 // そのあとslaveスレッドを終了させ、ベストな指し手を返すこと。
@@ -418,7 +461,7 @@ void MainThread::think()
 			{
 				// Ponder中は探索を止めない。
 				// Ponderが外れた時、Threads.ponder==trueのままThreads.stop==trueとなる
-				if (Time.elapsed() >= Time.optimum() || root->value_n_sum >= nodes_limit || root_mate_found)
+				if (Time.elapsed() >= Time.optimum() || root->value_n_sum >= nodes_limit || root_mate_found || decide_early_stop(root))
 				{
 					// 思考時間が来たら、新たな探索は停止する。
 					// ただし、評価途中のものの結果を受け取ってからbestmoveを決める。
