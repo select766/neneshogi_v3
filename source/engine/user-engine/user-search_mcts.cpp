@@ -388,7 +388,7 @@ bool decide_early_stop(UCTNode *root)
 
 	float pv_prob = max_nodes / cur_nodes;
 	// PVの確率、現在ノード数、今後探索できそうなノード数から、指し手が変化する確率を推定
-	float change_score = pv_prob * -5.32F + log2f(cur_nodes / 1024) * -0.305F + log2f(estimated_future_nodes / 1024) * 0.376F;
+	float change_score = pv_prob * -5.326F + log2f(cur_nodes / 1024) * -0.306F + log2f(estimated_future_nodes / 1024) * 0.377F + 0.798F;
 	float change_prob = 1.0F / (expf(-change_score) + 1.0F);
 	if (change_prob < (early_stop_prob / 100.0F))
 	{
@@ -482,7 +482,7 @@ void MainThread::think()
 				// 置換表に最初からルートノードがあり、初回からroot_node.value_n_sumが大きい場合あり
 				// root_node.value_n_sumより大きい最小のprint_statusの倍数
 				print_search_status(root);
-				next_status_print_nodes = (root->value_n_sum + print_status_interval) / print_status_interval * print_status_interval;
+				next_status_print_nodes = ((int)root->value_n_sum + print_status_interval) / print_status_interval * print_status_interval;
 			}
 
 			sleep(10);
