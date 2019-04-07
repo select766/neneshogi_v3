@@ -1,4 +1,5 @@
 ﻿#ifdef USER_ENGINE_MCTS
+#include <cstdlib>
 #include "../../extra/all.h"
 #include "CNTKLibrary.h"
 #include "mcts.h"
@@ -23,6 +24,9 @@ static int limited_batch_size = 1;
 static int limited_until = 0;
 static int print_status_interval = 0;
 static int early_stop_prob = 0;
+// 環境変数で指定したサイズの置換表を事前確保
+static std::thread* advance_hash_init_thread = nullptr;
+static int advance_node_hash_size = 0;//MB単位
 
 // 定跡の指し手を選択するモジュール
 static Book::BookMoveSelector book;
@@ -108,6 +112,24 @@ void USI::extra_option(USI::OptionsMap & o)
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
 void Search::init()
 {
+	// 環境変数で指定したサイズの置換表を事前確保
+	// 大会で、数十GBのメモリをisreadyの際に確保&ゼロクリアしようとすると数十秒かかる。
+	// 対局開始になってからisreadyが来るため、相手を待たせてしまう。
+	// 起動時に環境変数でサイズを指定された場合は、ここで確保しておくことによりサーバログイン直後に時間を使える。
+	// 2局以上連続することは想定していない。最初の1局に対してのみ有効。
+	char* advance_node_hash_size_str = getenv("NENESHOGI_NODE_HASH_SIZE");//MB単位の文字列(MCTSHashと同じ)
+	if (advance_node_hash_size_str && strlen(advance_node_hash_size_str) > 0)
+	{
+		advance_node_hash_size = strtol(advance_node_hash_size_str, nullptr, 10);
+		if (advance_node_hash_size > 0)
+		{
+			advance_hash_init_thread = new std::thread([] {
+				sync_cout << "info string advance node hash initializing" << sync_endl;
+				mcts = new MCTS(MCTSTT::calc_uct_hash_size(advance_node_hash_size));
+				sync_cout << "info string advance node hash init completed" << sync_endl;
+			});
+		}
+	}
 }
 
 // isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
@@ -118,7 +140,25 @@ void  Search::clear()
 		// 初期化する
 		gpu_lock_thread_start();
 		int hash_size_mb = (int)Options["MCTSHash"];
-		mcts = new MCTS(MCTSTT::calc_uct_hash_size(hash_size_mb));
+		bool advance_initialized = false;
+		if (advance_hash_init_thread)
+		{
+			// Search::initで専用初期化スレッドが開始しているので、それを待つ
+			if (hash_size_mb != advance_node_hash_size)
+			{
+				//サイズが間違ってるのでエラーとして終了
+				sync_cout << "info string node hash size mismatch! " << hash_size_mb << "!=" << advance_node_hash_size << sync_endl;
+				return;
+			}
+			advance_hash_init_thread->join();
+			delete advance_hash_init_thread;
+			advance_hash_init_thread = nullptr;
+			advance_initialized = true;
+		}
+		else
+		{
+			mcts = new MCTS(MCTSTT::calc_uct_hash_size(hash_size_mb));
+		}
 		// mcts->virtual_loss = (int)Options["VirtualLoss"];
 		mcts->virtual_loss = stof((string)Options["VirtualLoss"]);
 		mcts->c_puct = ((int)Options["CPuct"]) * 0.01F;
