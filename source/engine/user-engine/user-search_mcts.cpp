@@ -15,6 +15,10 @@ static int root_mate_thread_id = -1;//ルート局面からの詰み探索をす
 static vector<Move> root_mate_pv;
 static atomic_bool root_mate_found = false;//ルート局面からの詰み探索で詰みがあった場合
 static int nodes_limit = NODES_LIMIT_MAX;//探索ノード数の上限
+// floatで探索数をカウントしており、2^24になるとインクリメントができなくなる。
+// 詰みに近い局面でPonderしているとこれに達して評価値がおかしくなるので、
+// これ以上の探索数になったらウェイトを挿入して異常値を防止する。
+static const int nodes_safety_max = 16777216 / 2;
 static bool already_initialized = false;//一度Search::clearで初期化済みかどうか。
 static atomic_size_t pending_limit = 1;//DNN評価待ちの要素数の最大数(スレッドごと)
 static int pending_limit_factor = 16;
@@ -599,6 +603,11 @@ void Thread::search()
 	bool block_until_all_get = false;
 	while (!Threads.stop || (n_put != n_get))
 	{
+		if (root->value_n_sum >= nodes_safety_max)
+		{
+			sleep(1);
+		}
+
 		bool enable_search = !Threads.stop && (n_put - n_get < pending_limit) && !block_until_all_get;
 		if (enable_search)
 		{
