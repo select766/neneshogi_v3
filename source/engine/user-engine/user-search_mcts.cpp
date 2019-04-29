@@ -518,7 +518,7 @@ void MainThread::think()
 			{
 				display_pv(root, rootPos);
 				lastPvTime += pv_interval;
-				sync_cout << "info string pending_limit " << pending_limit << sync_endl;
+				// sync_cout << "info string pending_limit " << pending_limit << sync_endl;
 			}
 
 			if (print_status_interval > 0 && next_status_print_nodes <= root->value_n_sum)
@@ -670,8 +670,10 @@ void Thread::search()
 			}
 		}
 	}
+	/*
 	sync_cout << "info string thread " << thread_id() << " n_put " << n_put
 		<< " leaf_dup " << leaf_dup << " leaf_mate_search_found " << leaf_mate_search_found << sync_endl;
+	*/
 }
 
 #endif // USER_ENGINE_MCTS
