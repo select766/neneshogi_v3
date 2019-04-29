@@ -685,6 +685,7 @@
     <ClCompile>
       <OpenMPSupport>
       </OpenMPSupport>
+      <PreprocessorDefinitions>USER_ENGINE_MCTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Relase-user-sse42-py|x64'">
