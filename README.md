@@ -1,4 +1,48 @@
-# ねね将棋 (v3; 2018/10 将棋電王トーナメント向け)
+# ねね将棋 (v3; 2019/05 第29回世界コンピュータ将棋選手権向け)
+
+# 対局プログラムのビルド
+Visual Studio 2017を利用。
+
+`YaneuraOu.sln`でソリューション構成`Release-user`でビルド。`Yaneuraou-user.exe`が出来る。
+
+`nenefwd/nenefwd.sln`でソリューション構成`Release`でビルド。できた`nenefwd.exe`および同じディレクトリの`*.dll`を`Yaneuraou-user.exe`のあるディレクトリにコピー。
+
+注: commit `0c8e9bd4f513015f8454fb6afcb67fd65321890e`時点では、`nenefwd.exe`はなく`Yaneuraou-user.exe`単独でGPU計算を行うようになっていたのだが、マルチGPU環境で原因不明のクラッシュが生じたためGPUによる局面評価を分離したのが`nenefwd.exe`。
+
+思考エンジンは`Yaneuraou-user.exe`を将棋所から使用。
+
+# 主な設定
+将棋所のオプションから設定できる。
+
+大会時はAWS p3.16xlarge使用のため、CPU64コア、GPU8台だった。
+
+|項目|意味|大会時設定|1GPU設定|
+|---|---|---|---|
+|Threads|CPUの探索スレッド数(3以上が必要)|58|4|
+|NetworkDelay2|真の時間切れの何秒前を探索終了にするか[ms]|4000|1120|
+|SlowMover|探索予定時間の引き延ばし率[%]|200|200|
+|MaxMovesToDraw|引き分けまでの手数|320|320|
+|EvalDir|評価関数`nene_1_1.cmf`のあるディレクトリ|?|?|
+|BatchSize|GPU評価バッチサイズ|256|256|
+|GPU|使用するGPU番号(-1=CPU)|0,1,2,3,4,5,6,7|0|
+|DNNFormatBoard|DNNの入力形式|1|1|
+|DNNFormatMove|DNNの方策出力形式|1|1|
+|LeafMateSearchDepth|探索木の末端で詰み探索をする際の深さ|5|5|
+|MCTSHash|MCTSのハッシュテーブルサイズの上限(MB)|131072|4096|
+|RootMateSearch|ルート局面からの詰み探索をするかどうか|true|true|
+|PolicyOnly|方策関数での即指し|false|false|
+|LimitedBatchSize|探索局面数が少ない間のバッチサイズ|16|16|
+|LimitedUntil|探索局面数が少ないと判定する局面数|10000|10000|
+|VirtualLoss|MCTSのVirtual Loss|1|1|
+|CPuct|MCTSのcpuct[%]|100|100|
+|EarlyStopProb|今後指し手が変化する確率がこの値[%]未満になったら指す|5|5|
+
+
+大会時設定注釈(大会当日朝問題が生じたため急きょ変更)
+- NetworkDelay2
+  - 探索予定時間の終了を認識してから指し手を出力するまでに思いのほか時間がかかったため、真の時間切れの4秒前に探索予定時間を終了するようにした。
+- GPU
+  - 0,0,1,1,...のように1GPUあたり2スレッド立てるほうがGPUを休みなく使えるのだが、立ち上がりに失敗することがあり諦めた。
 
 # セットアップ
 ## 環境

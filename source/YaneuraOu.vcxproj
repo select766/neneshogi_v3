@@ -669,6 +669,9 @@
       </OpenMPSupport>
       <PreprocessorDefinitions>USER_ENGINE_MCTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release-user-py|x64'">
     <ClCompile>
