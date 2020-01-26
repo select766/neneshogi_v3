@@ -1,7 +1,6 @@
 ﻿#ifdef USER_ENGINE_MCTS
 #include <cstdlib>
 #include "../../extra/all.h"
-#include "CNTKLibrary.h"
 #include "mcts.h"
 #include "dnn_thread.h"
 #include "gpu_lock.h"

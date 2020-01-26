@@ -1,4 +1,5 @@
-﻿#include "mcts.h"
+﻿#ifdef USER_ENGINE_MCTS
+#include "mcts.h"
 
 MCTSTT::MCTSTT(size_t uct_hash_size) :_uct_hash_size(uct_hash_size), _used(0), _obsolete_game_ply(0)
 {
@@ -642,3 +643,4 @@ void UCTNode::pprint()
 	}
 	cout << sync_endl;
 }
+#endif

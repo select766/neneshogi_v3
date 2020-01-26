@@ -1,6 +1,5 @@
 ﻿
 #include "../../extra/all.h"
-#include "CNTKLibrary.h"
 #include "dnn_converter.h"
 #include "dnn_eval_obj.h"
 #include <numeric>

@@ -568,6 +568,5 @@
     <None Include="..\docs\README2017.md">
       <Filter>docs</Filter>
     </None>
-    <None Include="packages.config" />
   </ItemGroup>
 </Project>
