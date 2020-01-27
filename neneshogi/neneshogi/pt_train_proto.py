@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 from neneshogi_cpp import DNNConverter
 
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 
 class PackedSfenDataset(Dataset):
     def __init__(self, path, count, skip=0):
@@ -50,11 +52,11 @@ class PackedSfenDataset(Dataset):
         return board, move_index
 
 
-trainset = PackedSfenDataset(r"D:\tmp\kifudecode\ALN_293_0.bin", 100000, skip=10000)
+trainset = PackedSfenDataset(r"D:\tmp\kifudecode\ALN_293_0_shuffled.bin", 100000)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=64,
                                           shuffle=False, num_workers=0)
 
-testset = PackedSfenDataset(r"D:\tmp\kifudecode\ALN_293_0.bin", 10000, skip=0)
+testset = PackedSfenDataset(r"D:\tmp\kifudecode\ALN_293_1_shuffled.bin", 10000)
 testloader = torch.utils.data.DataLoader(testset, batch_size=64,
                                          shuffle=False, num_workers=0)
 
@@ -77,6 +79,7 @@ class PolicyNet(nn.Module):
 
 
 net = PolicyNet()
+net.to(device)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
@@ -86,8 +89,8 @@ for epoch in range(2):  # loop over the dataset multiple times
     running_loss = 0.0
     for i, data in enumerate(trainloader, 0):
         # get the inputs; data is a list of [inputs, labels]
-        inputs = data['board']
-        labels = data['move_index']
+        inputs = data['board'].to(device)
+        labels = data['move_index'].to(device)
 
         # zero the parameter gradients
         optimizer.zero_grad()
