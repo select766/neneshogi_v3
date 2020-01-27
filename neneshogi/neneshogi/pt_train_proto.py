@@ -36,8 +36,8 @@ class PackedSfenDataset(Dataset):
             idx = idx.tolist()
 
         # TODO: idxが配列の時
-        board, move_index = self._read_record(idx)
-        return {'board': board, 'move_index': move_index}
+        board, move_index, game_result = self._read_record(idx)
+        return {'board': board, 'move_index': move_index, 'game_result': game_result}
 
     def _read_record(self, idx):
         ofs = (self.skip + idx) * self._record_size
@@ -49,10 +49,12 @@ class PackedSfenDataset(Dataset):
         self._cvt.set_packed_sfen(packed_sfen)
         board = self._cvt.get_board_array()
         move_index = self._cvt.get_move_index(move)
-        return board, move_index
+        # game_resultは勝ち負け引き分けが1,0,-1になっているがここでは勝ちをラベル1、それ以外をラベル0としておく
+        game_result_binary = 1 if game_result >= 1 else 0
+        return board, move_index, game_result_binary
 
 
-trainset = PackedSfenDataset(r"D:\tmp\kifudecode\ALN_293_0_shuffled.bin", 100000)
+trainset = PackedSfenDataset(r"D:\tmp\kifudecode\ALN_293_0_shuffled.bin", 1000000)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=64,
                                           shuffle=False, num_workers=0)
 
@@ -68,44 +70,59 @@ class PolicyNet(nn.Module):
         self.conv2 = nn.Conv2d(64, 64, 3, padding=1)
         self.conv3 = nn.Conv2d(64, 64, 3, padding=1)
         self.policy = nn.Conv2d(64, 27, 1)
+        self.value1 = nn.Linear(64 * 9 * 9, 256)
+        self.value2 = nn.Linear(256, 2)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-        x = self.policy(x)
-        x = x.view(-1, 9 * 9 * 27)
-        return x
+        xp = self.policy(x)
+        xp = xp.view(-1, 9 * 9 * 27)
+        xv = x.view(-1, 64 * 9 * 9)
+        xv = F.relu(self.value1(xv))
+        xv = self.value2(xv)
+        return xp, xv
 
 
 net = PolicyNet()
 net.to(device)
 
-criterion = nn.CrossEntropyLoss()
+criterion_policy = nn.CrossEntropyLoss()
+criterion_value = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
 for epoch in range(2):  # loop over the dataset multiple times
 
     running_loss = 0.0
+    running_loss_policy = 0.0
+    running_loss_value = 0.0
     for i, data in enumerate(trainloader, 0):
         # get the inputs; data is a list of [inputs, labels]
         inputs = data['board'].to(device)
-        labels = data['move_index'].to(device)
+        move_index = data['move_index'].to(device)
+        game_result = data['game_result'].to(device)
 
         # zero the parameter gradients
         optimizer.zero_grad()
 
         # forward + backward + optimize
-        outputs = net(inputs)
-        loss = criterion(outputs, labels)
+        output_policy, output_value = net(inputs)
+        loss_policy = criterion_policy(output_policy, move_index)
+        loss_value = criterion_value(output_value, game_result)
+        loss = loss_policy + loss_value
         loss.backward()
         optimizer.step()
 
         # print statistics
         running_loss += loss.item()
+        running_loss_policy += loss_policy.item()
+        running_loss_value += loss_value.item()
         if i % 200 == 199:  # print every 2000 mini-batches
-            print('[%d, %5d] loss: %.3f' %
-                  (epoch + 1, i + 1, running_loss / 2000))
+            print('[%d, %5d] loss: %.3f (policy: %.3f, value: %.3f)' %
+                  (epoch + 1, i + 1, running_loss / 200, running_loss_policy / 200, running_loss_value / 200))
             running_loss = 0.0
+            running_loss_policy = 0.0
+            running_loss_value = 0.0
 
 print('Finished Training')
