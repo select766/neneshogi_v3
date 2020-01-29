@@ -39,6 +39,11 @@ void DNNConverterPy::set_sfen(std::string sfen)
 	pos.set(sfen, &init_state, Threads.main());
 }
 
+std::string DNNConverterPy::get_sfen() const
+{
+	return pos.sfen();
+}
+
 py::array_t<float> DNNConverterPy::get_board_array() const {
 	auto bs = cvt.board_shape();
 	float *buf = new float[bs[0] * bs[1] * bs[2]]();
@@ -63,5 +68,13 @@ int DNNConverterPy::get_move_index(Move move) const
 Move DNNConverterPy::reverse_move_index(int move_index) const
 {
 	return cvt.reverse_move_index(pos, move_index);
+}
+Move DNNConverterPy::move_from_usi(const std::string move_usi)
+{
+	return ::move_from_usi(move_usi);
+}
+std::string DNNConverterPy::move_to_usi(Move move) const
+{
+	return to_usi_string(move);
 }
 #endif
