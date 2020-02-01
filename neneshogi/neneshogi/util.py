@@ -5,7 +5,7 @@ import yaml
 
 def yaml_load(path: str):
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.load(f)
+        return yaml.safe_load(f)
 
 
 def yaml_dump(obj: object, path: str):

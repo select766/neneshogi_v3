@@ -54,7 +54,7 @@ class PackedSfenDataset(Dataset):
         return board, move_index, game_result_binary
 
 
-trainset = PackedSfenDataset(r"D:\tmp\kifudecode\ALN_293_0_shuffled.bin", 1000000)
+trainset = PackedSfenDataset(r"D:\tmp\kifudecode\ALN_293_0_shuffled.bin", 100000)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=64,
                                           shuffle=False, num_workers=0)
 
@@ -126,3 +126,5 @@ for epoch in range(2):  # loop over the dataset multiple times
             running_loss_value = 0.0
 
 print('Finished Training')
+
+torch.save(net, "small_model.pt")
