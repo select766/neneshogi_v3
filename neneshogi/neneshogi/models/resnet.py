@@ -1,86 +1,55 @@
-import cntk as C
-from cntk.layers import Convolution2D, Dense, BatchNormalization
+import torch.nn as nn
+import torch.nn.functional as F
 
 
-def res_block(input_var, count, ch):
-    h = input_var
-    for i in range(count):
-        h = BatchNormalization()(h)
-        h = C.relu(h)
-        h = Convolution2D(3, ch, pad=True, bias=False)(h)
-    return h + input_var
+class ResBlockAZ(nn.Module):
+    def __init__(self, count, ch):
+        super().__init__()
+        self.count = count
+        self.ch = ch
+        layers = []
+        for i in range(count):
+            layers.append(nn.Conv2d(ch, ch, 3, padding=1, bias=False))  # in,out,ksize
+            layers.append(nn.BatchNorm2d(ch))
+        self.layers = nn.ModuleList(layers)
+
+    def forward(self, x):
+        h = x
+        for i in range(self.count):
+            h = self.layers[i * 2](h)
+            h = self.layers[i * 2 + 1](h)
+            if i < self.count - 1:
+                h = F.relu(h)
+        h = F.relu(h + x)
+        return h
 
 
-def ResNet(feature_var, board_shape, move_dim, *, ch=16, depth=4, block_depth=3, spatial_bias=False):
-    with C.layers.default_options(init=C.glorot_uniform()):
-        h = feature_var
-        h = Convolution2D(5, ch, pad=True, bias=False)(h)
-        h = BatchNormalization()(h)
-        h = C.relu(h)
-        for b in range(depth):
-            h = res_block(h, block_depth, ch)
-        policy = res_block(h, block_depth, ch)
-        policy = C.relu(policy)
-        policy = Convolution2D(3, (move_dim // 81), pad=True, bias=not spatial_bias)(policy)
-        if spatial_bias:
-            spatial_bias_param = C.parameter((move_dim // 81, 9, 9))
-            policy = C.plus(policy, spatial_bias_param)
-        policy = C.reshape(policy, shape=(move_dim,))
-        value = res_block(h, block_depth, ch)
-        value = C.relu(value)
-        value = Dense(1, activation=C.sigmoid, name="value")(value)
+class ResNetAZ(nn.Module):
+    def __init__(self, board_shape, move_dim, *, ch=16, depth=4, block_depth=2, move_hidden=256):
+        super().__init__()
+        self.conv1 = nn.Conv2d(board_shape[0], ch, 3, padding=1, bias=False)
+        self.conv1_bn = nn.BatchNorm2d(ch)
+        self.convs = nn.ModuleList([ResBlockAZ(block_depth, ch) for _ in range(depth)])
+        self.p_conv1 = nn.Conv2d(ch, 2, 1, bias=False)
+        self.p_conv1_bn = nn.BatchNorm2d(2)
+        self.p_fc2 = nn.Linear(2 * 9 * 9, move_dim)
+        self.v_conv1 = nn.Conv2d(ch, 1, 1, bias=False)
+        self.v_conv1_bn = nn.BatchNorm2d(1)
+        self.v_fc2 = nn.Linear(1 * 9 * 9, move_hidden)
+        self.v_fc3 = nn.Linear(move_hidden, 2)
 
-    return policy, value
-
-
-def res_block2(input_var, ch):
-    h = input_var
-    h = BatchNormalization()(input_var)
-    h = C.relu(h)
-    h = Convolution2D(3, ch, pad=True, bias=False)(h)
-    h = BatchNormalization()(h)
-    h = C.relu(h)
-    h = C.dropout(h, dropout_rate=0.1)
-    h = Convolution2D(3, ch, pad=True, bias=False)(h)
-    return h + input_var
-
-
-def ResNet2(feature_var, board_shape, move_dim, *, ch=192, depth=4):
-    """
-    dlshogiのネットワーク構造(入力部は異なる)
-    https://github.com/TadaoYamaoka/DeepLearningShogi/blob/b6e7538aebf2a5f41bd408b711b7d38c605b310e/dlshogi/policy_value_network.py
-    :param feature_var:
-    :param board_shape:
-    :param move_dim:
-    :param ch:
-    :param depth:
-    :param block_depth:
-    :param spatial_bias:
-    :return:
-    """
-    move_ch = move_dim // 81
-    with C.layers.default_options(init=C.glorot_uniform()):
-        h = feature_var
-        h = Convolution2D(3, ch, pad=True, bias=False)(h)
-        for b in range(depth):
-            h = res_block2(h, ch)
-        h = BatchNormalization()(h)
-        h = C.relu(h)
-
-        policy = h
-        policy = Convolution2D(1, move_ch, pad=True, bias=False)(policy)
-        spatial_bias_param = C.parameter((move_ch, 9, 9))
-        policy = C.plus(policy, spatial_bias_param)
-        policy = C.reshape(policy, shape=(move_dim,))
-
-        value = h
-        value = Convolution2D(1, move_ch, pad=True, bias=False)(value)
-        spatial_bias_param = C.parameter((move_ch, 9, 9))
-        value = C.plus(value, spatial_bias_param)
-        value = C.reshape(value, shape=(move_dim,))
-        value = BatchNormalization()(value)
-        value = C.relu(value)
-        value = Dense(256, activation=C.relu, name="value")(value)
-        value = Dense(1, activation=C.sigmoid, name="value")(value)
-
-    return policy, value
+    def forward(self, x):
+        h = x
+        h = F.relu(self.conv1_bn(self.conv1(h)))
+        for i in range(len(self.convs)):
+            h = self.convs[i](h)
+        hp = h
+        hp = F.relu(self.p_conv1_bn(self.p_conv1(hp)))
+        hp = hp.view(hp.shape[0], -1)
+        hp = self.p_fc2(hp)
+        hv = h
+        hv = F.relu(self.v_conv1_bn(self.v_conv1(hv)))
+        hv = hv.view(hv.shape[0], -1)
+        hv = F.relu(self.v_fc2(hv))
+        hv = self.v_fc3(hv)
+        return hp, hv
