@@ -540,7 +540,11 @@ void MultiThinkGenSfen::thread_worker(size_t thread_id)
 				TT.new_search();
 #endif
 
+#ifdef LEARN_GENSFEN_MULTIPV
 				auto pv_value1 = search(pos, depth, multi_pv);
+#else
+				auto pv_value1 = search(pos, depth);
+#endif
 
 				auto value1 = pv_value1.first;
 				auto& pv1 = pv_value1.second;
