@@ -1,4 +1,5 @@
-﻿#ifdef USER_ENGINE_MCTS
+﻿#include "../../extra/all.h"
+#ifdef USER_ENGINE_MCTS
 #include "mcts.h"
 
 MCTSTT::MCTSTT(size_t uct_hash_size) :_uct_hash_size(uct_hash_size), _used(0), _obsolete_game_ply(0)
@@ -6,7 +7,8 @@ MCTSTT::MCTSTT(size_t uct_hash_size) :_uct_hash_size(uct_hash_size), _used(0), _
 	_uct_hash_mask = _uct_hash_size - 1;
 	if (_uct_hash_mask & _uct_hash_size)
 	{
-		throw runtime_error("uct_hash_size must be power of 2");
+		// error: cannot use 'throw' with exceptions disabled (linux build)
+		// throw runtime_error("uct_hash_size must be power of 2");
 	}
 	entries = new NodeHashEntry[_uct_hash_size];
 	nodes = new UCTNode[_uct_hash_size];

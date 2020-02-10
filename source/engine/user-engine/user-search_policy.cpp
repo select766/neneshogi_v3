@@ -1,6 +1,6 @@
-﻿#ifdef USER_ENGINE_POLICY
+﻿#include "../../extra/all.h"
+#ifdef USER_ENGINE_POLICY
 
-#include "../../extra/all.h"
 #include "CNTKLibrary.h"
 #include "dnn_converter.h"
 #include <numeric>

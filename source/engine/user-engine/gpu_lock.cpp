@@ -1,4 +1,6 @@
 ﻿#include "../../extra/all.h"
+#ifdef _WIN64
+// Windowsのみサポート
 #include <Windows.h>
 
 // GPUロックタイムアウト
@@ -54,3 +56,14 @@ void gpu_lock_extend()
 	auto next_timeout = chrono::system_clock::now() + chrono::seconds(60);//1手60秒以上はめったにないのでこれぐらいで
 	gpu_lock_timeout.store(chrono::duration_cast<chrono::seconds>(next_timeout.time_since_epoch()));
 }
+
+#else
+// Windows以外では何もしない
+void gpu_lock_thread_start()
+{
+}
+void gpu_lock_extend()
+{
+}
+
+#endif

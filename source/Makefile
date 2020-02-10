@@ -148,6 +148,13 @@ SOURCES  = shogi.cpp                                                           \
 	eval/evaluate_io.cpp                                                       \
 	eval/evaluate_mir_inv_tools.cpp                                            \
 	engine/user-engine/user-search.cpp                                         \
+	engine/user-engine/dnn_converter.cpp                                       \
+	engine/user-engine/dnn_thread.cpp                                          \
+	engine/user-engine/gpu_lock.cpp                                            \
+	engine/user-engine/mate-search_for_mcts.cpp                                \
+	engine/user-engine/mcts.cpp                                                \
+	engine/user-engine/user-search_mcts.cpp                                    \
+	engine/user-engine/user-search_policy.cpp                                  \
 	engine/help-mate-engine/help-mate-search.cpp                               \
 	engine/2018-otafuku-engine/2018-otafuku-search.cpp                         \
 	learn/learner.cpp                                                          \

@@ -1,8 +1,7 @@
 ﻿// CNTKでDNN評価を行うスレッド
 
-
-#ifdef USER_ENGINE_MCTS
 #include "../../extra/all.h"
+#ifdef USER_ENGINE_MCTS
 #include "dnn_eval_obj.h"
 #include "dnn_thread.h"
 
@@ -14,19 +13,29 @@ size_t n_gpu_threads = 0;//GPUスレッドの数(GPU数と必ずしも一致し�
 float policy_temperature = 1.0;
 float value_temperature = 1.0;
 float value_scale = 1.0;
-static std::atomic_int n_dnn_thread_initalized = 0;
-std::atomic_int n_dnn_evaled_samples = 0;
-std::atomic_int n_dnn_evaled_batches = 0;
+static std::atomic_uint n_dnn_thread_initalized(0);
+std::atomic_int n_dnn_evaled_samples(0);
+std::atomic_int n_dnn_evaled_batches(0);
 
 #define DNN_EXTERNAL
 
 #ifdef DNN_EXTERNAL
+#ifdef _WIN64
 #include <WinSock2.h>
 #include <WS2tcpip.h>
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#define SOCKET int
+#define INVALID_SOCKET -1
+#define BOOL int
+#endif
 
 const int port_offset = 25250;
 static void dnn_thread_main(size_t worker_idx, string evalDir, int gpu_id, int port);
 
+#ifdef _WIN64
 static bool wsa_startup()
 {
 	WSADATA wsaData;
@@ -38,6 +47,12 @@ static bool wsa_startup()
 	}
 	return true;
 }
+#else
+static bool wsa_startup()
+{
+	return true;
+}
+#endif
 
 void start_dnn_threads(string& evalDir, int format_board, int format_move, vector<int>& gpuIds)
 {
@@ -97,7 +112,11 @@ static SOCKET start_listen(size_t worker_idx, int port)
 	struct sockaddr_in addr;
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(port);
+#ifdef _WIN64
 	addr.sin_addr.S_un.S_addr = INADDR_ANY;
+#else
+	addr.sin_addr.s_addr = INADDR_ANY;
+#endif
 	if (::bind(listen_sock, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
 		sync_cout << "info string failed bind worker=" << worker_idx << sync_endl;
 		return INVALID_SOCKET;
@@ -115,7 +134,11 @@ static SOCKET start_listen(size_t worker_idx, int port)
 static SOCKET do_accept(size_t worker_idx, SOCKET listen_sock)
 {
 	struct sockaddr_in client;
+#ifdef _WIN64
 	int len = sizeof(client);
+#else
+	socklen_t len = sizeof(client);
+#endif
 	SOCKET sock = accept(listen_sock, (struct sockaddr *)&client, &len);
 	if (sock == INVALID_SOCKET)
 	{
@@ -254,7 +277,7 @@ static void dnn_thread_main(size_t worker_idx, string evalDir, int gpu_id, int p
 	// 子プロセスを立てて接続を待つ
 	// 非常に単純に、system関数を実行するだけのスレッドを立ててしまう
 	auto system_thread = std::thread([evalDir, gpu_id, port, worker_idx] {
-		string dnn_system_command("nenefwd");
+		string dnn_system_command("./nenefwd");
 		dnn_system_command += " ";
 		dnn_system_command += evalDir;
 		dnn_system_command += " ";
