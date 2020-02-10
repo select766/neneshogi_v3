@@ -277,7 +277,12 @@ static void dnn_thread_main(size_t worker_idx, string evalDir, int gpu_id, int p
 	// 子プロセスを立てて接続を待つ
 	// 非常に単純に、system関数を実行するだけのスレッドを立ててしまう
 	auto system_thread = std::thread([evalDir, gpu_id, port, worker_idx] {
-		string dnn_system_command("./nenefwd");
+		string dnn_system_command("");
+#ifdef _WIN64
+		dnn_system_command += "nenefwd";
+#else
+		dnn_system_command += "./nenefwd";
+#endif
 		dnn_system_command += " ";
 		dnn_system_command += evalDir;
 		dnn_system_command += " ";
