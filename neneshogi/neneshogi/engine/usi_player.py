@@ -57,5 +57,7 @@ class UsiPlayer:
                 self.respond_position(tokens)
             elif tokens[0] == "go":
                 self.respond_go(tokens)
+            elif tokens[0] == "quit":
+                break
             else:
                 pass
