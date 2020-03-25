@@ -11,12 +11,15 @@ YANEURAOU_EDITION = YANEURAOU_2018_OTAFUKU_ENGINE
 #COMPILER = g++
 COMPILER = clang++
 
+TENSORRT_DIR = ../../TensorRT-7.0.0.11
+
 # 標準的なコンパイルオプション
-CFLAGS   = -std=c++14 -fno-exceptions -fno-rtti -Wextra -Ofast -MMD -MP -fpermissive
+# -fno-exceptions は例外がtensorrt内部で使用されるため指定不可
+CFLAGS   = -std=c++14 -fno-rtti -Wextra -Ofast -MMD -MP -fpermissive -D_REENTRANT
 WCFLAGS  =
-LDFLAGS  =
+LDFLAGS  = -L"/usr/local/cuda/lib64" -L"$(TENSORRT_DIR)/lib" -Wl,--start-group -lnvinfer -lnvparsers -lnvinfer_plugin -lnvonnxparser -lcudnn -lcublas -lcudart -lrt -ldl -lpthread -lmyelin -lnvrtc -Wl,--end-group
 LIBS     =
-INCLUDE  = # -I../include
+INCLUDE  = -I"/usr/local/cuda/include" -I"/usr/local/cuda/include" -I"$(TENSORRT_DIR)/include"
 
 # clang用にCFLAGSなどを変更
 ifeq ($(findstring clang++,$(COMPILER)),clang++)
@@ -155,6 +158,7 @@ SOURCES  = shogi.cpp                                                           \
 	engine/user-engine/mcts.cpp                                                \
 	engine/user-engine/user-search_mcts.cpp                                    \
 	engine/user-engine/user-search_policy.cpp                                  \
+	engine/user-engine/tensorrt/logger.cpp                                     \
 	engine/help-mate-engine/help-mate-search.cpp                               \
 	engine/2018-otafuku-engine/2018-otafuku-search.cpp                         \
 	learn/learner.cpp                                                          \
