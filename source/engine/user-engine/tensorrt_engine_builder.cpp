@@ -277,6 +277,13 @@ bool tensorrt_engine_builder(const char *onnxModelPath,
 {
     ::onnxModelPath = onnxModelPath;
     ::dstDir = dstDir;
+    string mkdir_command("mkdir -p ");
+    mkdir_command += dstDir; //セキュリティ的にはよくないが
+    if (system(mkdir_command.c_str()) != 0)
+    {
+        gLogError << "create output directory failed" << std::endl;
+        return false;
+    }
     ::batchSizeMin = batchSizeMin;
     ::batchSizeMax = batchSizeMax;
     ::profileBatchSizeMultiplier = profileBatchSizeMultiplier;
