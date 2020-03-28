@@ -1,3 +1,6 @@
+#include "../../extra/all.h"
+
+#ifndef DNN_EXTERNAL
 #include "NvInfer.h"
 #include "NvOnnxConfig.h"
 #include "NvOnnxParser.h"
@@ -16,7 +19,8 @@
 
 #include "tensorrt/common.h"
 #include "tensorrt/buffers.h"
-#include "../../source/engine/user-engine/dnn_engine_info.h"
+#include "dnn_engine_info.h"
+#include "tensorrt_engine_builder.h"
 
 static int profileBatchSizeMultiplier = 0;
 static int batchSizeMin = 1;
@@ -25,8 +29,9 @@ static bool fp16 = false;
 static bool fp8 = false;
 static const char *onnxModelPath = nullptr;
 static const char *dstDir = nullptr;
-static std::vector<std::string> inputTensorNames;
-static std::vector<std::string> outputTensorNames;
+static const char *inputTensorName = "input";
+static const char *outputPolicyTensorName = "output_policy";
+static const char *outputValueTensorName = "output_value";
 
 class ShogiOnnx
 {
@@ -106,9 +111,9 @@ bool ShogiOnnx::build()
     if (!profileBatchSizeMultiplier)
     {
         auto profile = builder->createOptimizationProfile();
-        profile->setDimensions(inputTensorNames[0].c_str(), OptProfileSelector::kMIN, Dims4{1, 119, 9, 9});
-        profile->setDimensions(inputTensorNames[0].c_str(), OptProfileSelector::kOPT, Dims4{batchSizeMax, 119, 9, 9});
-        profile->setDimensions(inputTensorNames[0].c_str(), OptProfileSelector::kMAX, Dims4{batchSizeMax, 119, 9, 9});
+        profile->setDimensions(inputTensorName, OptProfileSelector::kMIN, Dims4{1, 119, 9, 9});
+        profile->setDimensions(inputTensorName, OptProfileSelector::kOPT, Dims4{batchSizeMax, 119, 9, 9});
+        profile->setDimensions(inputTensorName, OptProfileSelector::kMAX, Dims4{batchSizeMax, 119, 9, 9});
         int profileIdx = config->addOptimizationProfile(profile);
         profileForBatchSize.resize(batchSizeMax + 1);
         for (int b = 1; b <= batchSizeMax; b++)
@@ -131,9 +136,9 @@ bool ShogiOnnx::build()
             {
                 bs = batchSizeMax;
             }
-            profile->setDimensions(inputTensorNames[0].c_str(), OptProfileSelector::kMIN, Dims4{lastbs + 1, 119, 9, 9});
-            profile->setDimensions(inputTensorNames[0].c_str(), OptProfileSelector::kOPT, Dims4{bs, 119, 9, 9});
-            profile->setDimensions(inputTensorNames[0].c_str(), OptProfileSelector::kMAX, Dims4{bs, 119, 9, 9});
+            profile->setDimensions(inputTensorName, OptProfileSelector::kMIN, Dims4{lastbs + 1, 119, 9, 9});
+            profile->setDimensions(inputTensorName, OptProfileSelector::kOPT, Dims4{bs, 119, 9, 9});
+            profile->setDimensions(inputTensorName, OptProfileSelector::kMAX, Dims4{bs, 119, 9, 9});
             int profileIdx = config->addOptimizationProfile(profile);
             for (int b = lastbs + 1; b <= bs; b++)
             {
@@ -205,9 +210,9 @@ bool ShogiOnnx::serialize()
     engineInfo.outputValueSizePerSample = engineInfo.outputValueDims[1];
     engineInfo.batchSizeMin = batchSizeMin;
     engineInfo.batchSizeMax = batchSizeMax;
-    strcpy(engineInfo.inputTensorName, inputTensorNames[0].c_str());
-    strcpy(engineInfo.outputPolicyTensorName, outputTensorNames[0].c_str());
-    strcpy(engineInfo.outputValueTensorName, outputTensorNames[1].c_str());
+    strcpy(engineInfo.inputTensorName, inputTensorName);
+    strcpy(engineInfo.outputPolicyTensorName, outputPolicyTensorName);
+    strcpy(engineInfo.outputValueTensorName, outputValueTensorName);
     for (int i = 0; i < profileForBatchSize.size(); i++)
     {
         engineInfo.profileForBatchSize[i] = profileForBatchSize[i];
@@ -263,19 +268,18 @@ bool ShogiOnnx::constructNetwork(SampleUniquePtr<nvinfer1::IBuilder> &builder,
     return true;
 }
 
-int main(int argc, char **argv)
+bool tensorrt_engine_builder(const char *onnxModelPath,
+                             const char *dstDir,
+                             int batchSizeMin,
+                             int batchSizeMax,
+                             int profileBatchSizeMultiplier,
+                             int fpbit)
 {
-    if (argc != 7)
-    {
-        std::cerr << "usage: tensorrt_engine_builder onnxModel dstDir batchSizeMin batchSizeMax profileBatchSizeMultiplier fpbit" << std::endl;
-        return 1;
-    }
-    onnxModelPath = argv[1];
-    dstDir = argv[2];
-    batchSizeMin = atoi(argv[3]);
-    batchSizeMax = atoi(argv[4]);
-    profileBatchSizeMultiplier = atoi(argv[5]);
-    int fpbit = atoi(argv[6]);
+    ::onnxModelPath = onnxModelPath;
+    ::dstDir = dstDir;
+    ::batchSizeMin = batchSizeMin;
+    ::batchSizeMax = batchSizeMax;
+    ::profileBatchSizeMultiplier = profileBatchSizeMultiplier;
     if (fpbit == 8)
     {
         fp8 = true;
@@ -284,20 +288,19 @@ int main(int argc, char **argv)
     {
         fp16 = true;
     }
-    inputTensorNames.push_back("input");
-    outputTensorNames.push_back("output_policy");
-    outputTensorNames.push_back("output_value");
 
     auto runner = new ShogiOnnx();
     if (!runner->build())
     {
         gLogError << "build failed" << std::endl;
-        return 1;
+        return false;
     }
     if (!runner->serialize())
     {
         gLogError << "serialize failed" << std::endl;
-        return 1;
+        return false;
     }
-    return 0;
+    return true;
 }
+
+#endif

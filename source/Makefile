@@ -158,6 +158,7 @@ SOURCES  = shogi.cpp                                                           \
 	engine/user-engine/mcts.cpp                                                \
 	engine/user-engine/user-search_mcts.cpp                                    \
 	engine/user-engine/user-search_policy.cpp                                  \
+	engine/user-engine/tensorrt_engine_builder.cpp                             \
 	engine/user-engine/tensorrt/logger.cpp                                     \
 	engine/help-mate-engine/help-mate-search.cpp                               \
 	engine/2018-otafuku-engine/2018-otafuku-search.cpp                         \

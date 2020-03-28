@@ -4,6 +4,7 @@
 #include "mcts.h"
 #include "dnn_thread.h"
 #include "gpu_lock.h"
+#include "tensorrt_engine_builder.h"
 
 static MCTS *mcts = nullptr;
 static vector<MTQueue<dnn_eval_obj*>*> response_queues;
@@ -84,6 +85,18 @@ void user_test(Position& pos_, istringstream& is)
 
 		sync_cout << "info string bench done " << elapsed << " sec, nps=" << nps << sync_endl;
 	}
+#ifndef DNN_EXTERNAL
+	if (token == "tensorrt_engine_builder")
+	{
+		sync_cout << "info string tensorrt_engine_builder start" << sync_endl;
+		string onnxModelPath, dstDir;
+		int batchSizeMin, batchSizeMax, profileBatchSizeMultiplier, fpbit;
+		is >> onnxModelPath >> dstDir >> batchSizeMin >> batchSizeMax >> profileBatchSizeMultiplier >> fpbit;
+		bool ok = tensorrt_engine_builder(onnxModelPath.c_str(), dstDir.c_str(), batchSizeMin, batchSizeMax, profileBatchSizeMultiplier, fpbit);
+
+		sync_cout << "info string tensorrt_engine_builder " << (ok ? "succeeded": "failed") << sync_endl;
+	}
+#endif
 }
 
 
