@@ -7,36 +7,36 @@
 #include "tensorrt_engine_builder.h"
 
 static MCTS *mcts = nullptr;
-static vector<MTQueue<dnn_eval_obj*>*> response_queues;
-static vector<MateEngine::MateSearchForMCTS*> leaf_mate_searchers;
+static vector<MTQueue<dnn_eval_obj *> *> response_queues;
+static vector<MateEngine::MateSearchForMCTS *> leaf_mate_searchers;
 static MateEngine::MateSearchForMCTS *root_mate_searcher = nullptr;
-static int pv_interval;//PV表示間隔[ms]
-static int root_mate_thread_id = -1;//ルート局面からの詰み探索をするスレッドのid(-1の場合はしない)
+static int pv_interval;				 //PV表示間隔[ms]
+static int root_mate_thread_id = -1; //ルート局面からの詰み探索をするスレッドのid(-1の場合はしない)
 static vector<Move> root_mate_pv;
-static atomic_bool root_mate_found(false);//ルート局面からの詰み探索で詰みがあった場合
-static int nodes_limit = NODES_LIMIT_MAX;//探索ノード数の上限
+static atomic_bool root_mate_found(false); //ルート局面からの詰み探索で詰みがあった場合
+static int nodes_limit = NODES_LIMIT_MAX;  //探索ノード数の上限
 // floatで探索数をカウントしており、2^24になるとインクリメントができなくなる。
 // 詰みに近い局面でPonderしているとこれに達して評価値がおかしくなるので、
 // これ以上の探索数になったらウェイトを挿入して異常値を防止する。
 static const int nodes_safety_max = 16777216 / 2;
-static bool already_initialized = false;//一度Search::clearで初期化済みかどうか。
-static atomic_size_t pending_limit(1);//DNN評価待ちの要素数の最大数(スレッドごと)
+static bool already_initialized = false; //一度Search::clearで初期化済みかどうか。
+static atomic_size_t pending_limit(1);   //DNN評価待ちの要素数の最大数(スレッドごと)
 static int pending_limit_factor = 16;
-static size_t normal_slave_threads = 1;//通常探索をするslaveスレッド数
+static size_t normal_slave_threads = 1; //通常探索をするslaveスレッド数
 static bool policy_only = false;
 static int limited_batch_size = 1;
 static int limited_until = 0;
 static int print_status_interval = 0;
 static int early_stop_prob = 0;
 // 環境変数で指定したサイズの置換表を事前確保
-static std::thread* advance_hash_init_thread = nullptr;
-static int advance_node_hash_size = 0;//MB単位
+static std::thread *advance_hash_init_thread = nullptr;
+static int advance_node_hash_size = 0; //MB単位
 
 // 定跡の指し手を選択するモジュール
 static Book::BookMoveSelector book;
 
 // USI拡張コマンド"user"が送られてくるとこの関数が呼び出される。実験に使ってください。
-void user_test(Position& pos_, istringstream& is)
+void user_test(Position &pos_, istringstream &is)
 {
 	string token;
 	is >> token;
@@ -44,11 +44,11 @@ void user_test(Position& pos_, istringstream& is)
 	{
 		// DNNを単純に動作させた場合のnpsをベンチマークする。
 		// isreadyでモデルを読み込み終わっている必要がある。
-		int count;//サンプル数
+		int count; //サンプル数
 		is >> count;
 
 		sync_cout << "info string start bench" << sync_endl;
-		MTQueue<dnn_eval_obj*> *response_queue = response_queues[0];
+		MTQueue<dnn_eval_obj *> *response_queue = response_queues[0];
 		int n_put = 0, n_get = 0;
 		std::chrono::system_clock::time_point bench_start = std::chrono::system_clock::now();
 		while (n_get < count)
@@ -68,7 +68,6 @@ void user_test(Position& pos_, istringstream& is)
 					request_queues[n_put % request_queues.size()]->push(eobj);
 					n_put++;
 				}
-
 			}
 
 			dnn_eval_obj *eobj_ret = nullptr;
@@ -94,35 +93,34 @@ void user_test(Position& pos_, istringstream& is)
 		is >> onnxModelPath >> dstDir >> batchSizeMin >> batchSizeMax >> profileBatchSizeMultiplier >> fpbit;
 		bool ok = tensorrt_engine_builder(onnxModelPath.c_str(), dstDir.c_str(), batchSizeMin, batchSizeMax, profileBatchSizeMultiplier, fpbit);
 
-		sync_cout << "info string tensorrt_engine_builder " << (ok ? "succeeded": "failed") << sync_endl;
+		sync_cout << "info string tensorrt_engine_builder " << (ok ? "succeeded" : "failed") << sync_endl;
 	}
 #endif
 }
 
-
 // USIに追加オプションを設定したいときは、この関数を定義すること。
 // USI::init()のなかからコールバックされる。
-void USI::extra_option(USI::OptionsMap & o)
+void USI::extra_option(USI::OptionsMap &o)
 {
 	//   定跡設定
 	book.init(o);
 
-	o["PvInterval"] << Option(300, 0, 100000);//PV表示間隔[ms]
+	o["PvInterval"] << Option(300, 0, 100000); //PV表示間隔[ms]
 	o["BatchSize"] << Option(16, 1, 65536);
-	o["GPU"] << Option("-1");//使用するGPU番号(-1==CPU)、カンマ区切りで複数指定可能
-	o["DNNFormatBoard"] << Option(0, 0, 16);//DNNのboard表現形式
-	o["DNNFormatMove"] << Option(0, 0, 16);//DNNのmove表現形式
-	o["LeafMateSearchDepth"] << Option(0, 0, 16);//末端局面での詰み探索深さ(0なら探索しない)
-	o["MCTSHash"] << Option(1024, 1, 1048576);//MCTSのハッシュテーブルサイズ(MB)
-	o["RootMateSearch"] << Option(false);//ルート局面からの詰み探索専用スレッドを用いるか(Threadsのうちの1つが使われる)
-	o["PolicyOnly"] << Option(false);//policy評価だけで指し手を決定し、探索を行わない
+	o["GPU"] << Option("-1");					  //使用するGPU番号(-1==CPU)、カンマ区切りで複数指定可能
+	o["DNNFormatBoard"] << Option(0, 0, 16);	  //DNNのboard表現形式
+	o["DNNFormatMove"] << Option(0, 0, 16);		  //DNNのmove表現形式
+	o["LeafMateSearchDepth"] << Option(0, 0, 16); //末端局面での詰み探索深さ(0なら探索しない)
+	o["MCTSHash"] << Option(1024, 1, 1048576);	//MCTSのハッシュテーブルサイズ(MB)
+	o["RootMateSearch"] << Option(false);		  //ルート局面からの詰み探索専用スレッドを用いるか(Threadsのうちの1つが使われる)
+	o["PolicyOnly"] << Option(false);			  //policy評価だけで指し手を決定し、探索を行わない
 	o["LimitedBatchSize"] << Option(16, 1, 65536);
-	o["LimitedUntil"] << Option(0, 0, 1000000);//ルートのvalue_n_sumがこの値未満の時、バッチサイズがLimitedBatchSizeだとみなして評価待ち要素数を制限する
+	o["LimitedUntil"] << Option(0, 0, 1000000); //ルートのvalue_n_sumがこの値未満の時、バッチサイズがLimitedBatchSizeだとみなして評価待ち要素数を制限する
 	// o["VirtualLoss"] << Option(1, 1, 1024);
 	o["VirtualLoss"] << Option("1");
-	o["CPuct"] << Option(100, 1, 10000);//c_puctの100倍
-	o["PrintStatusInterval"] << Option(0, 0, 1000000);//ルートノードの状態表示間隔[nodes]
-	o["EarlyStopProb"] << Option(0, 0, 100);//指し手変化確率[%]がこれを下回ったら、予定時間にかかわらず指す
+	o["CPuct"] << Option(100, 1, 10000);			   //c_puctの100倍
+	o["PrintStatusInterval"] << Option(0, 0, 1000000); //ルートノードの状態表示間隔[nodes]
+	o["EarlyStopProb"] << Option(0, 0, 100);		   //指し手変化確率[%]がこれを下回ったら、予定時間にかかわらず指す
 }
 
 // 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
@@ -133,7 +131,7 @@ void Search::init()
 	// 対局開始になってからisreadyが来るため、相手を待たせてしまう。
 	// 起動時に環境変数でサイズを指定された場合は、ここで確保しておくことによりサーバログイン直後に時間を使える。
 	// 2局以上連続することは想定していない。最初の1局に対してのみ有効。
-	char* advance_node_hash_size_str = getenv("NENESHOGI_NODE_HASH_SIZE");//MB単位の文字列(MCTSHashと同じ)
+	char *advance_node_hash_size_str = getenv("NENESHOGI_NODE_HASH_SIZE"); //MB単位の文字列(MCTSHashと同じ)
 	if (advance_node_hash_size_str && strlen(advance_node_hash_size_str) > 0)
 	{
 		advance_node_hash_size = strtol(advance_node_hash_size_str, nullptr, 10);
@@ -149,7 +147,7 @@ void Search::init()
 }
 
 // isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
-void  Search::clear()
+void Search::clear()
 {
 	if (!already_initialized)
 	{
@@ -199,10 +197,12 @@ void  Search::clear()
 		sync_cout << "info string initializing dnn threads" << sync_endl;
 		vector<int> gpuIds;
 		string evalDir = Options["EvalDir"];
-		stringstream ss(Options["GPU"]);//カンマ区切りでGPU番号を並べる
+		stringstream ss(Options["GPU"]); //カンマ区切りでGPU番号を並べる
 		string item;
-		while (getline(ss, item, ',')) {
-			if (!item.empty()) {
+		while (getline(ss, item, ','))
+		{
+			if (!item.empty())
+			{
 				int gpu_id = stoi(item);
 				gpuIds.push_back(gpu_id);
 			}
@@ -213,7 +213,7 @@ void  Search::clear()
 		int threads = (int)Options["Threads"];
 		for (int i = 0; i < threads; i++)
 		{
-			response_queues.push_back(new MTQueue<dnn_eval_obj*>());
+			response_queues.push_back(new MTQueue<dnn_eval_obj *>());
 		}
 
 		// 末端詰み探索の初期化
@@ -235,7 +235,7 @@ void  Search::clear()
 		// ルート局面からの詰み探索
 		if ((bool)Options["RootMateSearch"])
 		{
-			root_mate_thread_id = threads - 1;//最終スレッドを使う
+			root_mate_thread_id = threads - 1; //最終スレッドを使う
 			auto ms = new MateEngine::MateSearchForMCTS();
 			ms->init(128, MAX_PLY);
 			root_mate_searcher = ms;
@@ -280,8 +280,9 @@ static void display_stats()
 	int d_samples = n_dnn_evaled_samples;
 	int avg_batchsize = d_samples / std::max(d_batches, 1);
 	sync_cout << "info string DNN stat " << d_batches << " batch, " << d_samples << " samples, "
-		" average bs=" << avg_batchsize << " (" << (avg_batchsize * 100 / batch_size) << "%)"
-		<< sync_endl;
+																					" average bs="
+			  << avg_batchsize << " (" << (avg_batchsize * 100 / batch_size) << "%)"
+			  << sync_endl;
 }
 
 static int winrate_to_cp(float winrate)
@@ -324,7 +325,7 @@ static vector<Move> display_pv(UCTNode *root, Position &rootPos)
 	return pv;
 }
 
-static UCTNode* make_initial_nodes(Position &rootPos)
+static UCTNode *make_initial_nodes(Position &rootPos)
 {
 	// ルートノードの作成
 #if 0
@@ -407,7 +408,7 @@ void print_search_status(UCTNode *root)
 		}
 		std::cout << "{\"move\":\"" << root->move_list[i] << "\",";
 		std::cout << "\"n\":" << root->value_n[i] << ",\"p\":" << root->value_p[i]
-			<< ",\"w\":" << root->value_w[i] << "}";
+				  << ",\"w\":" << root->value_w[i] << "}";
 	}
 	std::cout << "]}";
 	std::cout << sync_endl;
@@ -492,16 +493,21 @@ void MainThread::think()
 	}
 	else if (policy_only)
 	{
-		UCTNode* root = make_initial_nodes(rootPos);
+		UCTNode *root = make_initial_nodes(rootPos);
 		bestMove = mcts->get_bestmove(root, rootPos, true);
+		while (Threads.ponder && !Threads.stop)
+		{
+			// ponder中は返してはいけない。
+			sleep(1);
+		}
 	}
 	else if (!rootPos.is_mated())
 	{
-		UCTNode* root = make_initial_nodes(rootPos);
+		UCTNode *root = make_initial_nodes(rootPos);
 		update_pending_limit(root);
 		// slaveスレッドで探索を開始
 		root_mate_found = false;
-		for (Thread* th : Threads)
+		for (Thread *th : Threads)
 			if (th != this)
 				th->start_searching();
 
@@ -545,7 +551,7 @@ void MainThread::think()
 		}
 
 		// slaveスレッドが探索を終わるのを待つ
-		for (Thread* th : Threads)
+		for (Thread *th : Threads)
 			if (th != this)
 				th->wait_for_search_finished();
 		root->pprint();
@@ -566,6 +572,15 @@ void MainThread::think()
 			{
 				ponderMove = pv[1];
 			}
+		}
+	}
+	else
+	{
+		// ponderする局面が詰んでいる場合、ここに到達
+		while (Threads.ponder && !Threads.stop)
+		{
+			// ponder中は返してはいけない。
+			sleep(1);
 		}
 	}
 
@@ -610,8 +625,8 @@ void Thread::search()
 	}
 	UCTNode *root = mcts->get_root(rootPos);
 	int n_put = 0, n_get = 0, leaf_dup = 0, leaf_mate_search_found = 0;
-	MTQueue<dnn_eval_obj*> *response_queue = response_queues[thread_id()];
-	MTQueue<dnn_eval_obj*> *request_queue = request_queues[thread_id() % request_queues.size()];
+	MTQueue<dnn_eval_obj *> *response_queue = response_queues[thread_id()];
+	MTQueue<dnn_eval_obj *> *request_queue = request_queues[thread_id() % request_queues.size()];
 	bool block_until_all_get = false;
 	while (!Threads.stop || (n_put != n_get))
 	{
@@ -653,7 +668,6 @@ void Thread::search()
 					//}
 				}
 			}
-
 		}
 
 		if (n_put > n_get)
@@ -678,7 +692,7 @@ void Thread::search()
 					block_until_all_get = false;
 				}
 
-				update_pending_limit(root);//実験のためバッチサイズ変更が遅延しないようここでも処理
+				update_pending_limit(root); //実験のためバッチサイズ変更が遅延しないようここでも処理
 			}
 		}
 	}
