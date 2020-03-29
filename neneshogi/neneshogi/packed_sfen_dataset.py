@@ -9,10 +9,13 @@ class PackedSfenDataset(Dataset):
     """
     やねうら王形式のPacked Sfen棋譜を読み取るデータセット
     """
-    def __init__(self, path, count, skip=0):
+    def __init__(self, path, count, skip=0, randomize_start=False):
         self._record_size = 40
         self._file = open(path, "rb")
         self._current_file_offset = 0
+        # データの最後と最初がつながっているとみなして、開始位置をランダムにずらす。
+        # 学習再開時に毎回先頭から読まれることによる過学習を防止。
+        self._start_offset = int(np.random.randint(count)) if randomize_start else 0
         self.count = count
         self.skip = skip
         self._cvt = DNNConverter(1, 1)  # format_board, format_move
@@ -29,6 +32,7 @@ class PackedSfenDataset(Dataset):
             idx = idx.tolist()
 
         # TODO: idxが配列の時
+        idx = (idx + self._start_offset) % self.count
         board, move_index, game_result = self._read_record(idx)
         return {'board': board, 'move_index': move_index, 'game_result': game_result}
 
