@@ -20,10 +20,12 @@ def main():
     device = "cpu"
     model = load_model(args.checkpoint_dir, device)
     torch.onnx.export(model, torch.randn(1, *BOARD_SHAPE), args.dst, export_params=True, opset_version=10,
-                      verbose=True, do_constant_folding=True, input_names=["input"], output_names=["output_policy", "output_value"],
-                      dynamic_axes={'input' : {0 : 'batch_size'},    # variable lenght axes
-                                    'output_policy' : {0 : 'batch_size'},
-                                    'output_value' : {0 : 'batch_size'}})
+                      verbose=True, do_constant_folding=True, input_names=["input"],
+                      output_names=["output_policy", "output_value"],
+                      # TensorRTでバッチサイズを可変にする際に必要
+                      dynamic_axes={'input': {0: 'batch_size'},  # variable length axes
+                                    'output_policy': {0: 'batch_size'},
+                                    'output_value': {0: 'batch_size'}})
 
 
 if __name__ == '__main__':
