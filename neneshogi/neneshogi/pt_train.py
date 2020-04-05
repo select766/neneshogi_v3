@@ -1,5 +1,6 @@
 import argparse
 import os
+from datetime import datetime, timedelta
 
 import torch
 import torch.optim as optim
@@ -64,11 +65,21 @@ def resume_status(train_dir, resume_dir, device, model, optimizer, lr_scheduler)
     return {"train_manager": statuses["train_manager"]}
 
 
+def create_stop_file(train_dir):
+    with open(os.path.join(train_dir, "deletetostop.tmp"), "w") as f:
+        pass
+
+
+def check_stop_file(train_dir):
+    return os.path.exists(os.path.join(train_dir, "deletetostop.tmp"))
+
+
 def train_loop(train_manager: TrainManager, train_config, device, model, criterion_policy, criterion_value, optimizer,
                lr_scheduler,
                train_loader, val_loader, summary_writer, train_dir):
     train_forever_iterator = iter(forever_iterator(train_loader))
-    while True:
+    next_dump_time = datetime.now() + timedelta(hours=1)
+    while check_stop_file(train_dir):
         next_action_info = train_manager.get_next_action()
         if next_action_info["action"] == "train":
             model.train()
@@ -92,6 +103,11 @@ def train_loop(train_manager: TrainManager, train_config, device, model, criteri
             summary_writer.add_scalar("train/loss_policy", loss_policy.item(), train_manager.trained_samples)
             summary_writer.add_scalar("train/loss_value", loss_value.item(), train_manager.trained_samples)
             train_manager.put_train_result()
+
+            if datetime.now() >= next_dump_time:
+                # dump_status(train_dir=train_dir, train_manager=train_manager, model=model, optimizer=optimizer,
+                #             lr_scheduler=lr_scheduler)
+                next_dump_time += timedelta(hours=1)
 
         elif next_action_info["action"] == "val":
             model.eval()
@@ -141,6 +157,8 @@ def train_loop(train_manager: TrainManager, train_config, device, model, criteri
         else:
             break
     print("quit: ", train_manager.quit_reason)
+    dump_status(train_dir=train_dir, train_manager=train_manager, model=model, optimizer=optimizer,
+                lr_scheduler=lr_scheduler)
 
 
 def main():
@@ -154,7 +172,8 @@ def main():
     train_config = yaml_load(os.path.join(train_dir, "train.yaml"))
     device = torch.device(args.device or ("cuda:0" if torch.cuda.is_available() else "cpu"))
 
-    model, criterion_policy, criterion_value, optimizer, lr_scheduler = setup_trainer(model_config, train_config, device)
+    model, criterion_policy, criterion_value, optimizer, lr_scheduler = setup_trainer(model_config, train_config,
+                                                                                      device)
     train_loader, val_loader = setup_data_loader(train_config)
     summary_writer = SummaryWriter(os.path.join(train_dir, "log"))
     if args.resume:
@@ -163,6 +182,7 @@ def main():
         train_manager = resumed_status["train_manager"]
     else:
         train_manager = TrainManager(**train_config["manager"])
+    create_stop_file(train_dir)
     train_loop(train_manager=train_manager, train_config=train_config, device=device, model=model,
                criterion_policy=criterion_policy,
                criterion_value=criterion_value, optimizer=optimizer, lr_scheduler=lr_scheduler,
