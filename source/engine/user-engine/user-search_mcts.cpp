@@ -88,10 +88,10 @@ void user_test(Position &pos_, istringstream &is)
 	if (token == "tensorrt_engine_builder")
 	{
 		sync_cout << "info string tensorrt_engine_builder start" << sync_endl;
-		string onnxModelPath, dstDir;
-		int batchSizeMin, batchSizeMax, profileBatchSizeMultiplier, fpbit;
-		is >> onnxModelPath >> dstDir >> batchSizeMin >> batchSizeMax >> profileBatchSizeMultiplier >> fpbit;
-		bool ok = tensorrt_engine_builder(onnxModelPath.c_str(), dstDir.c_str(), batchSizeMin, batchSizeMax, profileBatchSizeMultiplier, fpbit);
+		string onnxModelPath, dstDir, profileBatchSizeRange;
+		int batchSizeMin, batchSizeMax, fpbit;
+		is >> onnxModelPath >> dstDir >> batchSizeMin >> batchSizeMax >> profileBatchSizeRange >> fpbit;
+		bool ok = tensorrt_engine_builder(onnxModelPath.c_str(), dstDir.c_str(), batchSizeMin, batchSizeMax, profileBatchSizeRange.c_str(), fpbit);
 
 		sync_cout << "info string tensorrt_engine_builder " << (ok ? "succeeded" : "failed") << sync_endl;
 	}

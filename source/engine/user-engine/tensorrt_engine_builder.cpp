@@ -22,7 +22,7 @@
 #include "dnn_engine_info.h"
 #include "tensorrt_engine_builder.h"
 
-static int profileBatchSizeMultiplier = 0;
+static string profileBatchSizeRange;
 static int batchSizeMin = 1;
 static int batchSizeMax = 16;
 static bool fp16 = false;
@@ -108,7 +108,7 @@ bool ShogiOnnx::build()
     {
         return false;
     }
-    if (!profileBatchSizeMultiplier)
+    if (!profileBatchSizeRange.length())
     {
         auto profile = builder->createOptimizationProfile();
         profile->setDimensions(inputTensorName, OptProfileSelector::kMIN, Dims4{1, 119, 9, 9});
@@ -123,30 +123,31 @@ bool ShogiOnnx::build()
     }
     else
     {
-        // profileBatchSizeMultiplier==4のとき
-        // バッチサイズ1, 2-4, 5-16, 17-64に対しそれぞれ
-        // バッチサイズ1, 4, 16, 64に最適化した実行計画を作成
-        int bs = 1;
+        // profileBatchSizeRange: opt1-max1-opt2-max2...
+        // profileBatchSizeRange==10-20-100-200のとき
+        // バッチサイズ1~20について、バッチサイズ10に最適化した実行計画を作成
+        // バッチサイズ21~200について、バッチサイズ100に最適化した実行計画を作成
+        string pbsr = profileBatchSizeRange;
+        replace(pbsr.begin(), pbsr.end(), '-', ' ');//ハイフン区切りの文字列をスペース区切りにしてistringstreamでトークンごとに読む
+        istringstream iss(pbsr);
         int lastbs = 0;
         profileForBatchSize.resize(batchSizeMax + 1);
-        while (lastbs < batchSizeMax)
-        {
+        int bs_opt, bs_max;
+        string bs_opt_s, bs_max_s;
+        while (iss >> bs_opt_s >> bs_max_s) {
+            bs_opt = atoi(bs_opt_s.c_str());
+            bs_max = atoi(bs_max_s.c_str());
             auto profile = builder->createOptimizationProfile();
-            if (bs > batchSizeMax)
-            {
-                bs = batchSizeMax;
-            }
             profile->setDimensions(inputTensorName, OptProfileSelector::kMIN, Dims4{lastbs + 1, 119, 9, 9});
-            profile->setDimensions(inputTensorName, OptProfileSelector::kOPT, Dims4{bs, 119, 9, 9});
-            profile->setDimensions(inputTensorName, OptProfileSelector::kMAX, Dims4{bs, 119, 9, 9});
+            profile->setDimensions(inputTensorName, OptProfileSelector::kOPT, Dims4{bs_opt, 119, 9, 9});
+            profile->setDimensions(inputTensorName, OptProfileSelector::kMAX, Dims4{bs_max, 119, 9, 9});
             int profileIdx = config->addOptimizationProfile(profile);
-            for (int b = lastbs + 1; b <= bs; b++)
+            for (int b = lastbs + 1; b <= bs_max; b++)
             {
                 profileForBatchSize[b] = profileIdx;
             }
 
-            lastbs = bs;
-            bs *= profileBatchSizeMultiplier;
+            lastbs = bs_max;
         }
     }
 
@@ -272,7 +273,7 @@ bool tensorrt_engine_builder(const char *onnxModelPath,
                              const char *dstDir,
                              int batchSizeMin,
                              int batchSizeMax,
-                             int profileBatchSizeMultiplier,
+                             const char *profileBatchSizeRange,
                              int fpbit)
 {
     ::onnxModelPath = onnxModelPath;
@@ -286,7 +287,7 @@ bool tensorrt_engine_builder(const char *onnxModelPath,
     }
     ::batchSizeMin = batchSizeMin;
     ::batchSizeMax = batchSizeMax;
-    ::profileBatchSizeMultiplier = profileBatchSizeMultiplier;
+    ::profileBatchSizeRange = string(profileBatchSizeRange);
     if (fpbit == 8)
     {
         fp8 = true;

@@ -3,6 +3,6 @@ bool tensorrt_engine_builder(const char *onnxModelPath,
                              const char *dstDir,
                              int batchSizeMin,
                              int batchSizeMax,
-                             int profileBatchSizeMultiplier,
+                             const char *profileBatchSizeRange,
                              int fpbit);
 #endif
