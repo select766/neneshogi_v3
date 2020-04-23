@@ -164,8 +164,9 @@ def train_loop(train_manager: TrainManager, train_config, device, model, criteri
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("train_dir")
-    parser.add_argument("--device")
-    parser.add_argument("--resume")
+    parser.add_argument("--device", help="cpu / cuda:0 etc.")
+    parser.add_argument("--resume", help="checkpoint directory to resume training")
+    parser.add_argument("--initmodel", help="model.pt file instead of random initialization")
     args = parser.parse_args()
     train_dir = args.train_dir
     model_config = yaml_load(os.path.join(train_dir, "model.yaml"))
@@ -181,6 +182,8 @@ def main():
                                        lr_scheduler=lr_scheduler)
         train_manager = resumed_status["train_manager"]
     else:
+        if args.initmodel:
+            model.load_state_dict(torch.load(args.initmodel, map_location=str(device))["model_state_dict"])
         train_manager = TrainManager(**train_config["manager"])
     create_stop_file(train_dir)
     train_loop(train_manager=train_manager, train_config=train_config, device=device, model=model,
