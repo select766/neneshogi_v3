@@ -87,8 +87,9 @@ void start_dnn_threads(string &evalDir, int format_board, int format_move, vecto
 	}
 }
 
-static SOCKET start_listen(size_t worker_idx, int port)
+static SOCKET start_listen(size_t worker_idx, int *port)
 {
+	// portにはポート番号の初期値を設定する。もし使用されていたらインクリメントされ、実際に確保されたポート番号が得られる。
 	SOCKET listen_sock = socket(AF_INET, SOCK_STREAM, 0);
 	if (listen_sock == INVALID_SOCKET)
 	{
@@ -104,31 +105,72 @@ static SOCKET start_listen(size_t worker_idx, int port)
 	}
 
 	// プロセスを再起動したらすぐポートを再利用できるようにする
-	BOOL yes = 1;
-	setsockopt(listen_sock,
-			   SOL_SOCKET, SO_REUSEADDR, (const char *)&yes, sizeof(yes));
+	// -> 生きているプロセスが同じポートをbindしてもエラーにならず、自己対戦に支障
+	//BOOL yes = 1;
+	//setsockopt(listen_sock,
+	//		   SOL_SOCKET, SO_REUSEADDR, (const char *)&yes, sizeof(yes));
 
 	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof(struct sockaddr_in));
 	addr.sin_family = AF_INET;
-	addr.sin_port = htons(port);
 #ifdef _WIN64
 	addr.sin_addr.S_un.S_addr = INADDR_ANY;
 #else
 	addr.sin_addr.s_addr = INADDR_ANY;
 #endif
-	if (::bind(listen_sock, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+	for (int retry = 0; retry < 100; retry++)
 	{
-		sync_cout << "info string failed bind worker=" << worker_idx << sync_endl;
-		return INVALID_SOCKET;
+		addr.sin_port = htons(*port);
+		if (::bind(listen_sock, (struct sockaddr*) & addr, sizeof(addr)) != 0)
+		{
+#ifdef _WIN64
+			int socket_error_code = WSAGetLastError();
+			int addrinuse = WSAEADDRINUSE;
+#else
+			int socket_error_code = errno;
+			int addrinuse = EADDRINUSE;
+#endif
+
+			if (socket_error_code == addrinuse)
+			{
+				// 使用されているポート番号
+				(*port)++;
+				continue;
+			}
+			else
+			{
+				sync_cout << "info string failed bind worker=" << worker_idx << "," << socket_error_code << sync_endl;
+				return INVALID_SOCKET;
+			}
+		}
+
+		if (listen(listen_sock, 1) != 0)
+		{
+#ifdef _WIN64
+			int socket_error_code = WSAGetLastError();
+			int addrinuse = WSAEADDRINUSE;
+#else
+			int socket_error_code = errno;
+			int addrinuse = EADDRINUSE;
+#endif
+
+			if (socket_error_code == addrinuse)
+			{
+				// 使用されているポート番号
+				(*port)++;
+				continue;
+			}
+			else
+			{
+				sync_cout << "info string failed listen worker=" << worker_idx << "," << socket_error_code << sync_endl;
+				return INVALID_SOCKET;
+			}
+		}
+
+		return listen_sock;
 	}
 
-	if (listen(listen_sock, 1) != 0)
-	{
-		sync_cout << "info string failed listen worker=" << worker_idx << sync_endl;
-		return INVALID_SOCKET;
-	}
-
-	return listen_sock;
+	return INVALID_SOCKET;
 }
 
 static SOCKET do_accept(size_t worker_idx, SOCKET listen_sock)
@@ -268,7 +310,7 @@ static void dnn_thread_main(size_t worker_idx, string evalDir, int gpu_id, int p
 	MTQueue<dnn_eval_obj *> *request_queue = request_queues[worker_idx % request_queues.size()];
 
 	// TCP listen開始
-	SOCKET listen_sock = start_listen(worker_idx, port);
+	SOCKET listen_sock = start_listen(worker_idx, &port);
 	if (listen_sock == INVALID_SOCKET)
 	{
 		return;
