@@ -1,53 +1,114 @@
-# ねね将棋 (v3; 2019/05 第29回世界コンピュータ将棋選手権向け)
+# ねね将棋 (v3.1; 2020/05 世界コンピュータ将棋オンライン大会向け)
+
+ねね将棋は、深層学習(Deep Learning)を用いた将棋AIです。
+
+環境構築が面倒なので棋譜検討用にはお勧めできません。
+
+2019/05 第29回世界コンピュータ将棋選手権 一次予選10位（一次予選参加40チーム中、別に二次予選からのシード16チーム）
+2020/05 世界コンピュータ将棋オンライン大会1日目12位（1日目参加27チーム中）、2日目22位（2日目からのシード12チーム含む28チーム中）
 
 # 対局プログラムのビルド
-Visual Studio 2017を利用。
+## Windows
+子プロセスとしてpythonを呼び出し、pytorchモデルを動作させる。学習用のpython環境セットアップが必要。
 
-`YaneuraOu.sln`でソリューション構成`Release-user`でビルド。`Yaneuraou-user.exe`が出来る。
+Visual Studio 2019を利用。
 
-`nenefwd/nenefwd.sln`でソリューション構成`Release`でビルド。できた`nenefwd.exe`および同じディレクトリの`*.dll`を`Yaneuraou-user.exe`のあるディレクトリにコピー。
+`YaneuraOu.sln`でソリューション構成`Release-user`でビルド。`build/user/Yaneuraou-user.exe`が出来る。
 
-注: commit `0c8e9bd4f513015f8454fb6afcb67fd65321890e`時点では、`nenefwd.exe`はなく`Yaneuraou-user.exe`単独でGPU計算を行うようになっていたのだが、マルチGPU環境で原因不明のクラッシュが生じたためGPUによる局面評価を分離したのが`nenefwd.exe`。
+同じディレクトリに`nenefwd.bat`を以下のような内容で設置。`Yaneuraou-user.exe`からはこのバッチファイルが実行され、副次的にpythonが呼び出される。
 
-思考エンジンは`Yaneuraou-user.exe`を将棋所から使用。
+```
+@echo off
+call C:\path\to\Anaconda3\Scripts\activate.bat C:\path\to\Anaconda3\envs\neneshogi2020
+python -m neneshogi.nenefwd.nenefwd %*
+```
+
+2行目はAnacondaの仮想環境を有効化する設定。環境により異なる。
+
+定跡を使用する場合(デフォルト)、[https://github.com/yaneurao/YaneuraOu/releases/tag/v4.73_book](https://github.com/yaneurao/YaneuraOu/releases/tag/v4.73_book)から`standard_book.zip`をダウンロード・解凍して`build/user/book/standard_book.db`に設置。
+
+## Linux
+
+TensorRTを用い、ONNXフォーマットのモデルを実行する。TensorRTを使用する都合上、NVIDIA GPU上でしか動かせない。(プリプロセッサ`DNN_EXTERNAL`の定義により、Windowsと同様外部pythonプロセスによる評価も可能)
+
+Ubuntu 18.04環境を想定する。
+
+```
+sudo apt-get install build-essential clang-7 g++-8
+```
+
+このほか、CUDA、cuDNN、TensorRTのパスを通す必要あり。
+
+```
+cd script
+./linux_build.sh
+```
+
+これで実行バイナリ`build/user/YaneuraOu-user-linux-clang-avx2`が生成できるはず。
+
+定跡の設置はWindowsと同様。
+
+エンジンを起動し、ONNXモデルをTensorRTエンジンに変換する。
+```
+usi
+user tensorrt_engine_builder /path/to/model.onnx /path/to/dst 1 126 1-1-15-15-126-126 16
+```
+
+(意味 `onnxModelPath dstDir batchSizeMin batchSizeMax profileBatchSizeRange fpbit`)
+
+`/path/to/dst`（ディレクトリ）が作成されその中にTensorRT関係のファイルが生成される。このディレクトリを将棋所設定のEvalDirに指定する。
+
+クラウド設定例は [awssetting.md](awssetting.md) 参照
 
 # 主な設定
-将棋所のオプションから設定できる。
+将棋所のオプションから設定できる。(デフォルトは省略)
 
 大会時はAWS p3.16xlarge使用のため、CPU64コア、GPU8台だった。
 
 |項目|意味|大会時設定|1GPU設定|
 |---|---|---|---|
 |Threads|CPUの探索スレッド数(3以上が必要)|58|4|
-|NetworkDelay2|真の時間切れの何秒前を探索終了にするか[ms]|4000|1120|
 |SlowMover|探索予定時間の引き延ばし率[%]|200|200|
 |MaxMovesToDraw|引き分けまでの手数|320|320|
-|EvalDir|評価関数`nene_1_1.cmf`のあるディレクトリ|?|?|
-|BatchSize|GPU評価バッチサイズ|256|256|
-|GPU|使用するGPU番号(-1=CPU)|0,1,2,3,4,5,6,7|0|
+|EvalDir|下記参照|?|?|
+|BatchSize|GPU評価バッチサイズ|126|126|
+|GPU|使用するGPU番号(-1=CPU)|0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7|0,0|
 |DNNFormatBoard|DNNの入力形式|1|1|
 |DNNFormatMove|DNNの方策出力形式|1|1|
 |LeafMateSearchDepth|探索木の末端で詰み探索をする際の深さ|5|5|
-|MCTSHash|MCTSのハッシュテーブルサイズの上限(MB)|131072|4096|
+|MCTSHash|MCTSのハッシュテーブルサイズの上限(MB)|80000|10000|
+|PvInterval|読み筋出力時間間隔[ms]|1000|1000|
 |RootMateSearch|ルート局面からの詰み探索をするかどうか|true|true|
 |PolicyOnly|方策関数での即指し|false|false|
-|LimitedBatchSize|探索局面数が少ない間のバッチサイズ|16|16|
+|LimitedBatchSize|探索局面数が少ない間のバッチサイズ|15|15|
 |LimitedUntil|探索局面数が少ないと判定する局面数|10000|10000|
-|VirtualLoss|MCTSのVirtual Loss|1|1|
-|CPuct|MCTSのcpuct[%]|100|100|
 |EarlyStopProb|今後指し手が変化する確率がこの値[%]未満になったら指す|5|5|
 
+EvalDirは、TensorRTを使う場合はONNXモデルから生成したエンジンの出力ディレクトリ、nenefwdを使う場合はpytorchの学習スナップショットディレクトリ(`model.pt`がある)。
 
-大会時設定注釈(大会当日朝問題が生じたため急きょ変更)
-- NetworkDelay2
-  - 探索予定時間の終了を認識してから指し手を出力するまでに思いのほか時間がかかったため、真の時間切れの4秒前に探索予定時間を終了するようにした。
-- GPU
-  - 0,0,1,1,...のように1GPUあたり2スレッド立てるほうがGPUを休みなく使えるのだが、立ち上がりに失敗することがあり諦めた。
+定跡をやねうら王標準定跡と定跡なしで自己対局したところ、若干定跡なしのほうが勝率が良かったため、大会2日目では定跡なし(`no_book`)とした。
 
-# セットアップ
+ハッシュテーブルサイズを環境変数`NENESHOGI_NODE_HASH_SIZE`で指定すると起動直後からメモリ確保・ゼロクリアを開始する。確保には1GB/sec程度かかるため。必ず設定値の`MCTSHash`と同じ値を指定すること。大会時、対局サーバ上で相手とマッチングする前にメモリ確保することで、スムーズに対局開始可能となる。2局以上連続して行う場合には使えないかもしれない。
+
+エンジンクラッシュ・回線切断時のバックアップとして用いる即指しエンジン設定(デフォルトは省略)は以下の通り。[shogi-usi-failover](https://github.com/select766/shogi-usi-failover)を用いてクラッシュ時に切り替える。
+
+|項目|大会時設定|
+|---|---|
+|EvalDir|C:\\..\\resnetaz_192ch_19block\\checkpoints\\train_029700192|
+|DNNFormatBoard|1|
+|DNNFormatMove|1|
+|MCTSHash|32|
+|PolicyOnly|true|
+
+
+# 学習環境セットアップ
+やねうら王のPackedSfenValue形式の棋譜から教師あり学習する機能のみ搭載されている。
+
+やねうら王の一部を切り出したpython moduleのコンパイルが必要で、Windowsにのみ対応。
+
 ## 環境
 - Visual Studio 2017 (C++)
-- Python 3.6 (Anaconda)
+- Python 3.7 (Anaconda)
 - PyCharm
 
 ## ビルド
@@ -56,27 +117,95 @@ git submodule init
 git submodule update
 ```
 
-`YaneuraOu.sln`を開きソリューション構成`Release-user`および`Release-user-py`をビルド。
+`YaneuraOu.sln`を開きソリューション構成`Release-user-py`をビルド。
 
 `neneshogi`ディレクトリで`python addpath.py`を実行。ビルドされたpythonモジュール`neneshogi_cpp`をimportパスに入れる。
 
 `neneshogi`ディレクトリで`python setup.py develop`を実行。pythonのモジュール`neneshogi`をimportパスに入れる。
 
 ## 方策学習
-超暫定。やねうら王形式(`PackedSfenValue`)の学習棋譜が必要。
+やねうら王形式(`PackedSfenValue`)の学習棋譜が必要。
 [例](http://yaneuraou.yaneu.com/2018/01/23/%E6%9C%88%E5%88%8A%E6%95%99%E5%B8%AB%E5%B1%80%E9%9D%A2-2018%E5%B9%B41%E6%9C%88%E5%8F%B7/)
 
-棋譜データを`shuffle_sfen1.bin`とする。
+各局面に対して、指し手(policy)および勝敗(value)を学習する。
+
+棋譜データを`shuffle_sfen[12].bin`とする。
+
+適当なディレクトリ(以下`traindir`)を作成。
+
+モデル構造を定義する`model.yaml`を設置
 
 ```
-# 棋譜をCTFDeserializerで読める形式にする(5GBぐらい)
-python -m neneshogi.convert_kifu_ctf shuffled_sfen1.bin train_data.txt --count 100000
-python -m neneshogi.convert_kifu_ctf shuffled_sfen1.bin test_data.txt --count 10000 --skip 100000
-# 学習
-python -m neneshogi.train_proto
+model: ResNetAZ
+kwargs:
+  ch: 192
+  depth: 19
+  block_depth: 2
+  move_hidden: 256
 ```
 
-モデルファイルが`policy.cmf`に出力される。
+学習方法を定義する`train.yaml`を設置
+
+```
+optimizer:
+  kwargs:
+    lr: 0.01
+    momentum: 0.9
+lr_scheduler:
+  kwargs: {}
+loss:
+  policy: 1.0
+  value: 1.0
+dataset:
+  train:
+    data:
+      path: path/to/shuffle_sfen1.bin
+      count: 167000000
+      skip: 0
+    loader:
+      batch_size: 256
+  val:
+    data:
+      path: path/to/shuffle_sfen2.bin
+      count: 10000
+      skip: 0
+    loader:
+      batch_size: 256
+manager:
+  batch_size: 256
+  val_frequency: 1000000
+  exit_lr: 0.9e-6
+```
+
+学習実行
+```
+python -m neneshogi.pt_train traindir
+```
+
+損失・正解率の推移をtensorboardで可視化できる。
+
+```
+tensorboard --logdir traindir/log
+```
+
+validationのたびに、モデル及び学習再開用のデータが`traindir/checkpoints/train_<iteration>`に出力される。`model.pt`がモデル本体。
+
+学習を任意のタイミングで中断したいときは、`traindir/deletetostop.tmp`ファイルを削除する。直ちにモデル及び学習再開用のデータが`traindir/checkpoints/train_<iteration>`に出力される。
+
+学習を再開する際は、学習再開用のデータがあるディレクトリを指定して次のようなコマンドを実行する。
+
+```
+python -m neneshogi.pt_train traindir --resume traindir/checkpoints/train_<iteration>
+```
+
+## TensorRTを用いたモデル実行
+TensorRTでモデルを実行する場合、まずpytorchのモデルをONNXフォーマットに変換する必要がある。
+
+```
+python -m neneshogi.export_onnx traindir/checkpoints/train_123456/model.pt traindir/checkpoints/train_123456/model.onnx
+```
+
+ここから先はやねうら王エンジン上での操作になる。
 
 ====
 
